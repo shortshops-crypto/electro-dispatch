@@ -406,88 +406,88 @@ function handlePOUp(e){
 
 // ==================== AI PDF PARSER ====================
 async function parsePDFwithAI(file){
-  showToast('🤖 Reading PDF… extracting PO details');
-
-  // Extract text from PDF using a hidden iframe + FileReader approach
-  // We'll read the PDF as text using a simple extraction method
-  const text = await extractPDFText(file);
+  showToast('📄 Reading PDF...');
+  const text=await extractPDFText(file);
   if(!text){showToast('⚠️ Could not read PDF text');return;}
-
+  const result=parseDMartPOText(text);
+  if(result&&result.length>0){importParsedItems(result);return;}
+  showToast('🤖 Using AI to read PDF...');
   try{
-    const apiBody=JSON.stringify({
-      model:'claude-sonnet-4-20250514',
-      max_tokens:1000,
-      messages:[{
-        role:'user',
-        content:`Extract ALL purchase order details from this DMart PO text and return ONLY a valid JSON array. Each item in the array is one line item.
-
-For each line item extract:
-- poNum: PO number (e.g. "5002672157")
-- article: EAN/Article number (e.g. "1001833338")
-- description: item description (e.g. "TSHIRT BOY BSC GPC PT 8-14Y@99")
-- qty: total quantity as number (e.g. 14256)
-- deliveryDate: Expc.Delv.Dt in YYYY-MM-DD format
-- site: warehouse site code — the number after the pipe in barcode reference like "5002672157|1033" → "1033"
-- mrp: MRP value as string
-- price: Net Price as string
-- whName: warehouse name from Ship/Bill To
-- whAddress: full warehouse address
-- whEmail: receiving email
-
-Return ONLY the JSON array, no markdown, no explanation.
-
-PDF TEXT:
-${text}`
-      }]
-    });
+    const trimmed=text.replace(/s+/g,' ').trim().slice(0,2500);
+    const apiBody=JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:500,
+      messages:[{role:'user',content:'Extract PO from DMart PDF, return ONLY JSON array with fields: poNum,article,description,qty,deliveryDate(YYYY-MM-DD),site(number after pipe in barcode ref e.g. 5002672157|1033 gives 1033),mrp,price,whName,whEmail. TEXT: '+trimmed}]});
     const resp=await fetch(AI_API,{method:'POST',headers:{'Content-Type':'application/json'},body:apiBody});
     const data=await resp.json();
-    const rawText=data.content?.find(c=>c.type==='text')?.text||'';
+    const raw=data.content?.find(c=>c.type==='text')?.text||'';
+    const cleaned=raw.replace(/[`]{3}json|[`]{3}/g,'').trim();
+    const arr=JSON.parse(cleaned);
+    importParsedItems(Array.isArray(arr)?arr:[arr]);
+  }catch(e){showToast('⚠️ Could not parse PDF — try again');console.error('PDF error:',e);}
+}
 
-    let items;
-    try{
-      const clean=rawText.replace(/```json|```/g,'').trim();
-      items=JSON.parse(clean);
-      if(!Array.isArray(items))items=[items];
-    }catch(e){
-      showToast('⚠️ Could not parse PDF — try again');
-      console.error('PDF parse error:',rawText);
-      return;
-    }
-
-    let added=0,skipped=0;
-    items.forEach(item=>{
-      if(!item.poNum)return;
-      if(dupPO(item.poNum)){skipped++;return;}
-      if(item.site&&!S.warehouses.find(w=>w.code===String(item.site))){
-        S.warehouses.push({id:'WH'+item.site,code:String(item.site),
-          name:item.whName||'Warehouse '+item.site,
-          address:item.whAddress||'',email:item.whEmail||''});
-      }
-      S.pos.push({
-        id:'PO'+Date.now()+Math.random().toString(36).slice(2),
-        poNum:String(item.poNum),article:String(item.article||''),
-        description:String(item.description||''),qty:parseInt(item.qty)||0,
-        deliveryDate:item.deliveryDate||'',site:String(item.site||''),
-        supplierId:'',apptDate:'',extDate:'',delayReason:'',
-        mrp:String(item.mrp||''),price:String(item.price||'')
-      });
-      added++;
-    });
-
-    if(added>0){
-      applySkuMapping();refreshAll();
-      showToast(`✅ Imported ${added} PO(s) from PDF${skipped>0?' · '+skipped+' skipped':''}`);
-      promptAssignIfNeeded();
-    } else if(skipped>0){
-      showToast(`ℹ️ POs already exist (${skipped} skipped)`);
-    } else {
-      showToast('⚠️ No PO data found in PDF');
-    }
-  }catch(e){
-    console.error('PDF AI error:',e);
-    showToast('⚠️ PDF reading failed — check connection');
+function parseDMartPOText(text){
+  const items=[];
+  // Extract PO number (10 digits)
+  const poMatch=text.match(/PO\s*#\s*(\d{10})/i)||text.match(/(\d{10})\s*\|\s*\d{3,4}/);
+  if(!poMatch)return null;
+  const poNum=poMatch[1];
+  // Extract site code after pipe e.g. 5002672157|1033
+  const siteMatch=text.match(/\d{10}\s*\|\s*(\d{3,4})/);
+  const site=siteMatch?siteMatch[1]:'';
+  // Extract expected delivery date
+  const dateMatch=text.match(/Expc[a-z.]*\s*Delv[a-z.]*\s*Dt[a-z.]*\s*(\d{2}[./]\d{2}[./]\d{4})/i);
+  let deliveryDate='';
+  if(dateMatch){
+    const p=dateMatch[1].split(/[./]/);
+    deliveryDate=p[2]+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0');
   }
+  // Extract warehouse email
+  const emailMatch=text.match(/receiving\.[a-z0-9]+@dmartindia\.com/i);
+  const whEmail=emailMatch?emailMatch[0]:'';
+  // Extract warehouse name
+  const whMatch=text.match(/Avenue Supermarts[^\r\n]*/i);
+  const whName=whMatch?whMatch[0].trim().slice(0,60):'';
+  // Extract total quantity
+  const qtyMatch=text.match(/Total\s+([\d,]+)/i);
+  const totalQty=qtyMatch?parseInt(qtyMatch[1].replace(/,/g,'')):0;
+  // Extract EAN (13 digits)
+  const eanMatch=text.match(/(\d{13})/);
+  // Extract description (e.g. TSHIRT BOY BSC GPC PT 8-14Y@99)
+  const descMatch=text.match(/[A-Z]{2,}\s+[A-Z]{2,}[^@\r\n]*@\d+/);
+  // Extract MRP and price
+  const mrpMatch=text.match(/MRP\s*Rs?\s*([\d.]+)/i)||text.match(/([\d]+\.00)\s*$/m);
+  const priceMatch=text.match(/Net\s*Price[^\d]*([\d.]+)/i)||text.match(/([\d]+\.\d{2})\s+0\.00\s+0\.00/);
+  if(eanMatch&&totalQty){
+    items.push({poNum,article:eanMatch[1],
+      description:descMatch?descMatch[0].trim().replace(/\s+/g,' ').slice(0,60):'',
+      qty:totalQty,deliveryDate,site,
+      mrp:mrpMatch?mrpMatch[1]:'',
+      price:priceMatch?priceMatch[1]:'',
+      whName,whAddress:'',whEmail});
+  }
+  return items.length?items:null;
+}
+
+function importParsedItems(items){
+  let added=0,skipped=0;
+  items.forEach(item=>{
+    if(!item.poNum)return;
+    if(dupPO(item.poNum)){skipped++;return;}
+    if(item.site&&!S.warehouses.find(w=>w.code===String(item.site))){
+      S.warehouses.push({id:'WH'+item.site,code:String(item.site),
+        name:item.whName||'Warehouse '+item.site,address:item.whAddress||'',email:item.whEmail||''});}
+    S.pos.push({id:'PO'+Date.now()+Math.random().toString(36).slice(2),
+      poNum:String(item.poNum),article:String(item.article||''),
+      description:String(item.description||''),qty:parseInt(item.qty)||0,
+      deliveryDate:item.deliveryDate||'',site:String(item.site||''),
+      supplierId:'',apptDate:'',extDate:'',delayReason:'',
+      mrp:String(item.mrp||''),price:String(item.price||'')});
+    added++;
+  });
+  if(added>0){applySkuMapping();refreshAll();promptAssignIfNeeded();
+    showToast('✅ Imported '+added+' PO(s) from PDF'+(skipped?' · '+skipped+' skipped':''));}
+  else if(skipped>0)showToast('ℹ️ PO already exists ('+skipped+' skipped)');
+  else showToast('⚠️ No PO data found in PDF');
 }
 
 // Extract readable text from PDF using PDF.js CDN
