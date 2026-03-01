@@ -881,7 +881,7 @@ async function callSupAI(system,user,maxTokens=400){
     resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers,body});
     if(!resp.ok)throw new Error('direct blocked');
   }catch(e){
-    resp=await fetch('https://corsproxy.io/?'+encodeURIComponent('https://api.anthropic.com/v1/messages'),{method:'POST',headers,body});
+    resp=await fetch('https://api.allorigins.win/raw?url='+encodeURIComponent('https://api.anthropic.com/v1/messages'),{method:'POST',headers,body});
   }
   const d=await resp.json();
   return d.content?.find(c=>c.type==='text')?.text||'';

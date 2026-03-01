@@ -446,7 +446,7 @@ ${text}`
       resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:apiHeaders,body:apiBody});
       if(!resp.ok)throw new Error('direct failed');
     }catch(e){
-      resp=await fetch('https://corsproxy.io/?'+encodeURIComponent('https://api.anthropic.com/v1/messages'),{method:'POST',headers:apiHeaders,body:apiBody});
+      resp=await fetch('https://api.allorigins.win/raw?url='+encodeURIComponent('https://api.anthropic.com/v1/messages'),{method:'POST',headers:apiHeaders,body:apiBody});
     }
     const data=await resp.json();
     const rawText=data.content?.find(c=>c.type==='text')?.text||'';
@@ -1199,7 +1199,7 @@ function clearF(){['fWH','fSup','fStatus'].forEach(i=>{const el=document.getElem
 
 // ==================== AI ENGINE ====================
 const AI_MODEL='claude-sonnet-4-20250514';
-const CORS_PROXY='https://corsproxy.io/?'+encodeURIComponent('https://api.anthropic.com/v1/messages');
+const CORS_PROXY='https://api.allorigins.win/raw?url='+encodeURIComponent('https://api.anthropic.com/v1/messages');
 
 async function aiPost(bodyObj){
   const body=JSON.stringify(bodyObj);
