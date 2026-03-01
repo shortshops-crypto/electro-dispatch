@@ -648,7 +648,7 @@ function openSkuMapModal(skusToMap){
         </div>
         <div style="display:flex;align-items:center;gap:10px">
           <div style="font-size:11px;color:var(--muted);white-space:nowrap">All POs with this SKU →</div>
-          <select id="skumap-${art.replace(/[^a-zA-Z0-9]/g,'_')}" style="flex:1;font-size:12px;padding:6px 9px">${sO}</select>
+          <select id="skumap-${art.replace(/[^a-zA-Z0-9]/g,'_')}" data-art="${art}" style="flex:1;font-size:12px;padding:6px 9px">${sO}</select>
         </div>
       </div>`;
     }).join('')}
@@ -674,24 +674,18 @@ function openSkuMapModal(skusToMap){
 }
 
 function saveSkuMap(skusToMap){
-  // Read ALL skumap- selects currently in the DOM (covers both new mapping and edit flows)
-  const allSelects=document.querySelectorAll('[id^="skumap-"]');
+  const allSelects=document.querySelectorAll('[data-art]');
   let saved=0;
   allSelects.forEach(el=>{
     if(el.value){
-      // Reverse the key sanitization: find the original art that maps to this id
-      const sanitizedKey=el.id.replace('skumap-','');
-      // Find actual article from pos that matches sanitized key
-      const art=([...new Set(S.pos.map(p=>p.article||'Unknown'))]).find(a=>a.replace(/[^a-zA-Z0-9]/g,'_')===sanitizedKey)||sanitizedKey;
-      S.skuSupplierMap[art]=el.value;
+      S.skuSupplierMap[el.dataset.art]=el.value;
       saved++;
     }
   });
-  // Apply mapping to all POs immediately
   applySkuMapping();
   cm('mAssign');
   refreshAll();
-  if(saved>0) showToast(`✅ ${saved} SKU mapping(s) saved! All ${S.pos.length} POs auto-assigned.`);
+  if(saved>0)showToast(`✅ ${saved} SKU mapping(s) saved! All POs auto-assigned.`);
 }
 
 function remapSKU(art){
