@@ -872,17 +872,14 @@ function renderSummary(){
 
 // ===== AI HELPERS =====
 const SUP_AI_MODEL='claude-sonnet-4-20250514';
+const SUP_AI_API='https://super-haze-a51c.short-shops.workers.dev/';
 async function callSupAI(system,user,maxTokens=400){
-  const body=JSON.stringify({model:SUP_AI_MODEL,max_tokens:maxTokens,
-    system,messages:[{role:'user',content:user}]});
-  const headers={'Content-Type':'application/json'};
-  let resp;
-  try{
-    resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers,body});
-    if(!resp.ok)throw new Error('direct blocked');
-  }catch(e){
-    resp=await fetch('https://api.allorigins.win/raw?url='+encodeURIComponent('https://api.anthropic.com/v1/messages'),{method:'POST',headers,body});
-  }
+  const resp=await fetch(SUP_AI_API,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({model:SUP_AI_MODEL,max_tokens:maxTokens,
+      system,messages:[{role:'user',content:user}]})
+  });
   const d=await resp.json();
   return d.content?.find(c=>c.type==='text')?.text||'';
 }

@@ -440,14 +440,7 @@ PDF TEXT:
 ${text}`
       }]
     });
-    const apiHeaders={'Content-Type':'application/json'};
-    let resp;
-    try{
-      resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:apiHeaders,body:apiBody});
-      if(!resp.ok)throw new Error('direct failed');
-    }catch(e){
-      resp=await fetch('https://api.allorigins.win/raw?url='+encodeURIComponent('https://api.anthropic.com/v1/messages'),{method:'POST',headers:apiHeaders,body:apiBody});
-    }
+    const resp=await fetch(AI_API,{method:'POST',headers:{'Content-Type':'application/json'},body:apiBody});
     const data=await resp.json();
     const rawText=data.content?.find(c=>c.type==='text')?.text||'';
 
@@ -1199,18 +1192,14 @@ function clearF(){['fWH','fSup','fStatus'].forEach(i=>{const el=document.getElem
 
 // ==================== AI ENGINE ====================
 const AI_MODEL='claude-sonnet-4-20250514';
-const CORS_PROXY='https://api.allorigins.win/raw?url='+encodeURIComponent('https://api.anthropic.com/v1/messages');
+const AI_API='https://super-haze-a51c.short-shops.workers.dev/';
 
 async function aiPost(bodyObj){
-  const body=JSON.stringify(bodyObj);
-  const headers={'Content-Type':'application/json'};
-  let resp;
-  try{
-    resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers,body});
-    if(!resp.ok)throw new Error('direct blocked');
-  }catch(e){
-    resp=await fetch(CORS_PROXY,{method:'POST',headers,body});
-  }
+  const resp=await fetch(AI_API,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(bodyObj)
+  });
   return await resp.json();
 }
 
