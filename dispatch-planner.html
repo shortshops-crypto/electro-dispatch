@@ -406,61 +406,59 @@ function handlePOUp(e){
 
 // ==================== AI PDF PARSER ====================
 async function parsePDFwithAI(file){
-  // Show loading toast
   showToast('🤖 Reading PDF… extracting PO details');
 
-  // Convert PDF to base64
-  const base64=await new Promise((res,rej)=>{
-    const r=new FileReader();
-    r.onload=()=>res(r.result.split(',')[1]);
-    r.onerror=()=>rej(new Error('Read failed'));
-    r.readAsDataURL(file);
-  });
+  // Extract text from PDF using a hidden iframe + FileReader approach
+  // We'll read the PDF as text using a simple extraction method
+  const text = await extractPDFText(file);
+  if(!text){showToast('⚠️ Could not read PDF text');return;}
 
   try{
-    const resp=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        model:'claude-sonnet-4-20250514',
-        max_tokens:1000,
-        messages:[{
-          role:'user',
-          content:[
-            {type:'document',source:{type:'base64',media_type:'application/pdf',data:base64}},
-            {type:'text',text:`Extract ALL purchase order details from this DMart PO PDF and return ONLY a valid JSON array. Each item in the array is one line item from the PO.
+    const apiBody=JSON.stringify({
+      model:'claude-sonnet-4-20250514',
+      max_tokens:1000,
+      messages:[{
+        role:'user',
+        content:`Extract ALL purchase order details from this DMart PO text and return ONLY a valid JSON array. Each item in the array is one line item.
 
 For each line item extract:
-- poNum: the PO number (e.g. "5002672157")
-- article: the EAN/Article number (e.g. "1001833338") 
+- poNum: PO number (e.g. "5002672157")
+- article: EAN/Article number (e.g. "1001833338")
 - description: item description (e.g. "TSHIRT BOY BSC GPC PT 8-14Y@99")
-- qty: total quantity as a number (e.g. 14256)
-- deliveryDate: Expc.Delv.Dt in YYYY-MM-DD format (e.g. "2026-05-05")
-- site: the warehouse site code from the barcode/reference at top right (e.g. "1033") — extract the number after the pipe symbol in the barcode reference like "5002672157|1033"
-- mrp: MRP value as string (e.g. "119")
-- price: Net Price / B.Price as string (e.g. "75.00")
-- whName: full warehouse name from "Ship/Bill To" (e.g. "Baroda GM DC")
+- qty: total quantity as number (e.g. 14256)
+- deliveryDate: Expc.Delv.Dt in YYYY-MM-DD format
+- site: warehouse site code — the number after the pipe in barcode reference like "5002672157|1033" → "1033"
+- mrp: MRP value as string
+- price: Net Price as string
+- whName: warehouse name from Ship/Bill To
 - whAddress: full warehouse address
-- whEmail: receiving email address
+- whEmail: receiving email
 
-Return ONLY the JSON array, no explanation, no markdown backticks.
-Example: [{"poNum":"5002672157","article":"1001833338","description":"TSHIRT BOY BSC GPC PT 8-14Y@99","qty":14256,"deliveryDate":"2026-05-05","site":"1033","mrp":"119","price":"75.00","whName":"Baroda GM DC","whAddress":"Horizon Industrial park, Vill.: Bamangam, Tal.: Karjan, Dist.: Vadodara -391243","whEmail":"receiving.barodagm@dmartindia.com"}]`}
-          ]
-        }]
-      })
+Return ONLY the JSON array, no markdown, no explanation.
+
+PDF TEXT:
+${text}`
+      }]
     });
+    const apiHeaders={'Content-Type':'application/json'};
+    let resp;
+    try{
+      resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:apiHeaders,body:apiBody});
+      if(!resp.ok)throw new Error('direct failed');
+    }catch(e){
+      resp=await fetch('https://corsproxy.io/?'+encodeURIComponent('https://api.anthropic.com/v1/messages'),{method:'POST',headers:apiHeaders,body:apiBody});
+    }
     const data=await resp.json();
-    const text=data.content?.find(c=>c.type==='text')?.text||'';
+    const rawText=data.content?.find(c=>c.type==='text')?.text||'';
 
-    // Parse JSON response
     let items;
     try{
-      const clean=text.replace(/```json|```/g,'').trim();
+      const clean=rawText.replace(/```json|```/g,'').trim();
       items=JSON.parse(clean);
       if(!Array.isArray(items))items=[items];
     }catch(e){
-      showToast('⚠️ Could not parse PDF response — try again');
-      console.error('PDF parse error:',text);
+      showToast('⚠️ Could not parse PDF — try again');
+      console.error('PDF parse error:',rawText);
       return;
     }
 
@@ -468,51 +466,69 @@ Example: [{"poNum":"5002672157","article":"1001833338","description":"TSHIRT BOY
     items.forEach(item=>{
       if(!item.poNum)return;
       if(dupPO(item.poNum)){skipped++;return;}
-
-      // Auto-add warehouse if new
       if(item.site&&!S.warehouses.find(w=>w.code===String(item.site))){
-        S.warehouses.push({
-          id:'WH'+item.site,
-          code:String(item.site),
+        S.warehouses.push({id:'WH'+item.site,code:String(item.site),
           name:item.whName||'Warehouse '+item.site,
-          address:item.whAddress||'',
-          email:item.whEmail||''
-        });
+          address:item.whAddress||'',email:item.whEmail||''});
       }
-
       S.pos.push({
         id:'PO'+Date.now()+Math.random().toString(36).slice(2),
-        poNum:String(item.poNum),
-        article:String(item.article||''),
-        description:String(item.description||''),
-        qty:parseInt(item.qty)||0,
-        deliveryDate:item.deliveryDate||'',
-        site:String(item.site||''),
-        supplierId:'',
-        apptDate:'',
-        extDate:'',
-        delayReason:'',
-        mrp:String(item.mrp||''),
-        price:String(item.price||'')
+        poNum:String(item.poNum),article:String(item.article||''),
+        description:String(item.description||''),qty:parseInt(item.qty)||0,
+        deliveryDate:item.deliveryDate||'',site:String(item.site||''),
+        supplierId:'',apptDate:'',extDate:'',delayReason:'',
+        mrp:String(item.mrp||''),price:String(item.price||'')
       });
       added++;
     });
 
     if(added>0){
-      applySkuMapping();
-      refreshAll();
-      showToast(`✅ Imported ${added} PO(s) from PDF${skipped>0?' · '+skipped+' already existed':''}`);
+      applySkuMapping();refreshAll();
+      showToast(`✅ Imported ${added} PO(s) from PDF${skipped>0?' · '+skipped+' skipped':''}`);
       promptAssignIfNeeded();
     } else if(skipped>0){
-      showToast(`ℹ️ All POs from this PDF already exist (${skipped} skipped)`);
+      showToast(`ℹ️ POs already exist (${skipped} skipped)`);
     } else {
       showToast('⚠️ No PO data found in PDF');
     }
-
   }catch(e){
     console.error('PDF AI error:',e);
     showToast('⚠️ PDF reading failed — check connection');
   }
+}
+
+// Extract readable text from PDF using PDF.js CDN
+async function extractPDFText(file){
+  return new Promise((resolve)=>{
+    const reader=new FileReader();
+    reader.onload=async(e)=>{
+      try{
+        // Load PDF.js if not already loaded
+        if(!window.pdfjsLib){
+          await new Promise((res,rej)=>{
+            const s=document.createElement('script');
+            s.src='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+            s.onload=res;s.onerror=rej;
+            document.head.appendChild(s);
+          });
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc=
+            'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+        const pdf=await window.pdfjsLib.getDocument({data:e.target.result}).promise;
+        let fullText='';
+        for(let i=1;i<=pdf.numPages;i++){
+          const page=await pdf.getPage(i);
+          const content=await page.getTextContent();
+          fullText+=content.items.map(item=>item.str).join(' ')+'\n';
+        }
+        resolve(fullText);
+      }catch(err){
+        console.error('PDF.js error:',err);
+        resolve(null);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
 }
 function handleApptUp(e){const f=e.target.files[0];if(!f)return;parseXL(f,'appt');e.target.value='';}
 function parseXL(file,mode){
@@ -1183,16 +1199,29 @@ function clearF(){['fWH','fSup','fStatus'].forEach(i=>{const el=document.getElem
 
 // ==================== AI ENGINE ====================
 const AI_MODEL='claude-sonnet-4-20250514';
+const CORS_PROXY='https://corsproxy.io/?'+encodeURIComponent('https://api.anthropic.com/v1/messages');
+
+async function aiPost(bodyObj){
+  const body=JSON.stringify(bodyObj);
+  const headers={'Content-Type':'application/json'};
+  let resp;
+  try{
+    resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers,body});
+    if(!resp.ok)throw new Error('direct blocked');
+  }catch(e){
+    resp=await fetch(CORS_PROXY,{method:'POST',headers,body});
+  }
+  return await resp.json();
+}
+
 async function callAI(systemPrompt,userMsg,maxTokens=1200){
-  const resp=await fetch('https://api.anthropic.com/v1/messages',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({model:AI_MODEL,max_tokens:maxTokens,
-      system:systemPrompt,
-      messages:[{role:'user',content:userMsg}]
-    })
-  });
-  const d=await resp.json();
+  const d=await aiPost({model:AI_MODEL,max_tokens:maxTokens,
+    system:systemPrompt,messages:[{role:'user',content:userMsg}]});
+  return d.content?.find(c=>c.type==='text')?.text||'';
+}
+
+async function callAIwithPDF(messages,maxTokens=1000){
+  const d=await aiPost({model:AI_MODEL,max_tokens:maxTokens,messages});
   return d.content?.find(c=>c.type==='text')?.text||'';
 }
 
@@ -1496,16 +1525,11 @@ async function sendAI(){
   const context=buildAIContext();
   S.aiHistory.push({role:'user',content:q});
   try{
-    const resp=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        model:AI_MODEL,max_tokens:1000,
-        system:`You are a dispatch planning assistant for Electro Apparels, a garment middleman. Answer questions about POs, suppliers, SKUs, delays, transporters and delivery schedules. Use HTML tables when showing structured data. Format numbers in Indian system. Be specific with PO numbers and dates.\n\nCurrent data:\n${context}`,
-        messages:S.aiHistory.slice(-8).map(m=>({role:m.role,content:m.content}))
-      })
+    const data=await aiPost({
+      model:AI_MODEL,max_tokens:1000,
+      system:`You are a dispatch planning assistant for Electro Apparels, a garment middleman. Answer questions about POs, suppliers, SKUs, delays, transporters and delivery schedules. Use HTML tables when showing structured data. Format numbers in Indian system. Be specific with PO numbers and dates.\n\nCurrent data:\n${context}`,
+      messages:S.aiHistory.slice(-8).map(m=>({role:m.role,content:m.content}))
     });
-    const data=await resp.json();
     const text=data.content?.find(c=>c.type==='text')?.text||'Sorry, I could not process that.';
     typingDiv.innerHTML=text;
     S.aiHistory.push({role:'assistant',content:text});
