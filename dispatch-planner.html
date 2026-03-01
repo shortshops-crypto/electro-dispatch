@@ -416,64 +416,36 @@ async function parsePDFwithAI(file){
 
 function parseDMartPOText(text){
   const items=[];
-  // Normalize whitespace for easier matching
   const t=text.replace(/\s+/g,' ');
-
-  // PO number — "PO # 5002672144" or "PO# 5002672144"
   const poMatch=t.match(/PO\s*#\s*(\d{8,12})/i);
   if(!poMatch)return null;
   const poNum=poMatch[1];
-
-  // Site code — appears as "5002672144|1033" in barcode area (look in original text)
-  const siteMatch=t.match(/\d{8,12}\s*\|\s*(\d{3,4})/)||text.match(/\d{8,12}\s*\|\s*(\d{3,4})/);
-  const site=siteMatch?siteMatch[1]:'';
-
-  // Delivery date — "Expc.Delv.Dt 01.05.2026"
-  const dateMatch=t.match(/Expc\.?Delv\.?Dt\.?\s*(\d{2}[./]\d{2}[./]\d{4})/i);
+  const pipeMatch=t.match(/\d{8,12}\s*\|\s*(\d{3,4})/);
+  const site=pipeMatch?pipeMatch[1]:'';
+  const dateMatch=t.match(/Expc\.?Delv\.?Dt\.?\s*(\d{2}[.\/]\d{2}[.\/]\d{4})/i);
   let deliveryDate='';
   if(dateMatch){
-    const p=dateMatch[1].split(/[./]/);
+    const p=dateMatch[1].split(/[.\/]/);
     deliveryDate=p[2]+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0');
   }
-
-  // Warehouse email
   const emailMatch=t.match(/receiving\.[a-z0-9]+@dmartindia\.com/i);
   const whEmail=emailMatch?emailMatch[0]:'';
-
-  // Warehouse name — "Baroda GM DC"
-  const whMatch=t.match(/(?:Ship\/Bill To\s+)?Avenue Supermarts[^V]*/i);
-  const whName=whMatch?whMatch[0].replace('Ship/Bill To','').trim().slice(0,60):'';
-
-  // Total quantity — "Total 14,256"
+  const whMatch=t.match(/Avenue Supermarts[^,]*/i);
+  const whName=whMatch?whMatch[0].trim().slice(0,60):'';
   const qtyMatch=t.match(/Total\s+([\d,]+)/i);
   const totalQty=qtyMatch?parseInt(qtyMatch[1].replace(/,/g,'')):0;
-
-  // EAN/Article code (10-13 digits)
-  const eanMatch=t.match(/(\d{10,13})/);
-
-  // Description — e.g. "TSHIRT BOY BSC GPC PT 8-14Y@99"
+  const allNums=[...t.matchAll(/(\d{10,13})/g)].map(m=>m[1]);
+  const article=allNums.find(n=>n!==poNum)||'';
   const descMatch=t.match(/([A-Z]{2,}(?:\s+[A-Z0-9\-\/]+){2,}@\d+)/);
-
-  // MRP — last number before end of line items, typically after "119.00" etc
-  const mrpMatch=t.match(/(\d+\.00)\s+[\d,]+\.00\s*$/)||t.match(/MRP\s*[\d\s]*([\d.]+)/i);
-
-  // Price — Net Price / B.Price
-  const priceMatch=t.match(/(\d+\.\d{2})\s+0\.00\s+0\.00\s+0\.00/)||t.match(/Net\s*Price[^\d]*([\d.]+)/i);
-
-  if(eanMatch&&(totalQty||poNum)){
-    items.push({
-      poNum,
-      article:eanMatch[1],
+  const priceMatch=t.match(/([\d]+\.\d{2})\s+0\.00\s+0\.00\s+0\.00/);
+  const mrpMatch=t.match(/([\d]{2,4})\.00\s+[\d,]+\.00\s*$/);
+  if(poNum&&totalQty){
+    items.push({poNum,article,
       description:descMatch?descMatch[1].trim().slice(0,70):'',
-      qty:totalQty,
-      deliveryDate,
-      site,
-      mrp:mrpMatch?mrpMatch[1].replace('.00',''):'',
+      qty:totalQty,deliveryDate,site,
+      mrp:mrpMatch?mrpMatch[1]:'',
       price:priceMatch?priceMatch[1]:'',
-      whName,
-      whAddress:'',
-      whEmail
-    });
+      whName,whAddress:'',whEmail});
   }
   return items.length?items:null;
 }
