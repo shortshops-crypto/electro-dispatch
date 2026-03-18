@@ -1011,7 +1011,7 @@ function renderMasterTable(){
       <td style="font-size:10px">${wh?wh.name:`<span style="color:var(--muted)">${p.site||'—'}</span>`}</td>
       <td>${sup?`<span class="sup-pill" style="background:${sup.color}18;color:${sup.color};font-size:10px"><span class="cdot" style="background:${sup.color};width:6px;height:6px"></span>${sup.name}</span>`:`<span style="color:var(--purple);font-size:10px;cursor:pointer" onclick="openSkuMapModal(['${p.article||'Unknown'}'])">⚠ Map SKU</span>`}</td>
       <td>${(()=>{const tr=S.transporters.find(t=>t.id===S.whTransporterMap[p.site]);return tr?`<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px;padding:1px 6px;border-radius:3px;background:${tr.color}15;color:${tr.color}"><span class="cdot" style="background:${tr.color};width:5px;height:5px"></span>${tr.name}</span>`:`<span style="color:var(--muted);font-size:10px">—</span>`;})()}</td>
-      <td style="display:flex;gap:3px">${status} <button class="btn btn-xs btn-s" onclick="openPOModal('${p.id}',{})">✎</button></td>
+      <td style="display:flex;gap:3px">${status} <button class="btn btn-xs btn-s" data-pid="${p.id}" onclick="openPOModal(this.dataset.pid,{})">✎</button></td>
     </tr>`;
   }).join('');
 }
@@ -1517,7 +1517,7 @@ function renderPOList(){
           ${sup?`<span class="badge" style="background:${sup.color}22;color:${sup.color};border-color:${sup.color}44">${sup.name}</span>`:'<span class="badge t" style="color:var(--muted)">Unassigned</span>'}
         </div>
       </div>
-      <button class="poi-rm" onclick="openPOModal('${p.id}',{})">✎</button>
+      <button class="poi-rm" data-pid="${p.id}" onclick="openPOModal(this.dataset.pid,{})">✎</button>
     </div>`;
   }).join('');
 }
@@ -2149,6 +2149,10 @@ async function checkPW(){
 document.getElementById('hdate').textContent=new Date().toLocaleDateString('en-IN',{weekday:'short',day:'2-digit',month:'short',year:'numeric'}).toUpperCase();
 
 async function initApp(){
+  // Show loading state on dashboard immediately
+  const dashEl=document.getElementById('view-dashboard');
+  if(dashEl)dashEl.innerHTML='<div style="padding:40px;text-align:center;color:var(--muted)"><div style="font-size:24px;margin-bottom:10px">⏳</div><div>Loading your data...</div></div>';
+  
   const restored=await loadFromStorage();
   if(!restored){
     S.pos=[
@@ -2171,6 +2175,8 @@ async function initApp(){
   await mergeSupplierUpdates();
   renderDashboard();
   renderPanel();
+  // Also trigger AI briefing if on dashboard
+  if(S.pos.length>0)setTimeout(()=>loadDailyBriefing(),500);
 }
 
 // Check if already have a valid token
