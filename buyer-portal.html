@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Electro Apparels — Buyer Portal</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --bg:#0b0d12;--surface:#131620;--surface2:#191d2a;--surface3:#1f2435;
+  --border:#252a3a;--accent:#f0a500;--accent2:#3b82f6;
+  --green:#22c55e;--red:#ef4444;--orange:#f97316;--purple:#a855f7;--teal:#14b8a6;
+  --text:#e4e6ef;--muted:#5a6278;
+  --font-d:'Bebas Neue',sans-serif;--font-b:'DM Sans',sans-serif;--font-m:'DM Mono',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:var(--font-b);min-height:100vh;}
+
+/* LOGIN */
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+.login-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:40px 36px;width:100%;max-width:420px;text-align:center;}
+.login-logo{font-family:var(--font-d);font-size:36px;letter-spacing:2px;color:var(--accent);margin-bottom:4px;}
+.login-sub{font-size:12px;color:var(--muted);margin-bottom:28px;}
+.login-label{font-size:11px;color:var(--muted);text-align:left;display:block;margin-bottom:5px;}
+select,input{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:10px 12px;font-size:13px;font-family:var(--font-b);outline:none;transition:border .2s;}
+select:focus,input:focus{border-color:var(--accent);}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:none;border-radius:7px;padding:9px 18px;font-size:12px;font-family:var(--font-b);font-weight:600;cursor:pointer;transition:all .2s;}
+.btn-p{background:var(--accent);color:#000;}
+.btn-p:hover{opacity:.88;}
+.btn-s{background:var(--surface2);color:var(--text);border:1px solid var(--border);}
+.btn-s:hover{border-color:var(--accent);}
+.btn-sm{padding:6px 12px;font-size:11px;}
+
+/* HEADER */
+header{background:var(--surface);border-bottom:1px solid var(--border);padding:12px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+.hlogo{font-family:var(--font-d);font-size:22px;letter-spacing:1px;color:var(--accent);}
+.hright{display:flex;align-items:center;gap:10px;font-size:11px;color:var(--muted);}
+
+/* MAIN */
+.main{padding:24px;max-width:1200px;margin:0 auto;}
+
+/* STATS */
+.stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:20px;}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;}
+.stat-val{font-family:var(--font-d);font-size:28px;color:var(--accent);}
+.stat-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:2px;}
+.stat-sub{font-size:10px;color:var(--muted);margin-top:2px;}
+.stat.g .stat-val{color:var(--green);}
+.stat.r .stat-val{color:var(--red);}
+.stat.o .stat-val{color:var(--orange);}
+.stat.b .stat-val{color:var(--accent2);}
+
+/* SKU SELECTOR */
+.sku-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;margin-bottom:20px;}
+.sku-card{background:var(--surface);border:2px solid var(--border);border-radius:10px;padding:14px 16px;cursor:pointer;transition:all .2s;}
+.sku-card:hover{border-color:var(--accent);background:var(--surface2);}
+.sku-card.active{border-color:var(--accent);background:rgba(240,165,0,.08);}
+.sku-art{font-family:var(--font-m);font-size:11px;color:var(--accent);margin-bottom:3px;}
+.sku-desc{font-size:12px;font-weight:600;margin-bottom:6px;}
+.sku-meta{font-size:10px;color:var(--muted);}
+
+/* TABLE */
+.tbl-wrap{background:var(--surface);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:16px;}
+.tbl-header{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;}
+.tbl-title{font-family:var(--font-d);font-size:18px;letter-spacing:.5px;}
+table{width:100%;border-collapse:collapse;font-size:11px;}
+th{padding:10px 14px;text-align:left;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);white-space:nowrap;font-weight:500;}
+td{padding:10px 14px;border-bottom:1px solid var(--border);vertical-align:middle;}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:var(--surface2);}
+
+/* BADGES */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:5px;font-size:10px;font-weight:600;border:1px solid transparent;white-space:nowrap;}
+.badge-ok{background:rgba(34,197,94,.12);color:var(--green);border-color:rgba(34,197,94,.3);}
+.badge-grace{background:rgba(249,115,22,.12);color:var(--orange);border-color:rgba(249,115,22,.3);}
+.badge-delayed{background:rgba(239,68,68,.12);color:var(--red);border-color:rgba(239,68,68,.3);}
+.badge-pending{background:rgba(90,98,120,.12);color:var(--muted);border-color:rgba(90,98,120,.2);}
+.badge-grn{background:rgba(34,197,94,.12);color:var(--green);border-color:rgba(34,197,94,.3);}
+.badge-awaiting{background:rgba(90,98,120,.1);color:var(--muted);border-color:rgba(90,98,120,.2);}
+
+/* EXPORT TOOLBAR */
+.export-bar{display:flex;gap:8px;align-items:center;}
+
+/* HIDDEN */
+.hidden{display:none!important;}
+
+/* RESPONSIVE */
+@media(max-width:600px){.main{padding:14px;}.stats-row{grid-template-columns:repeat(2,1fr);}}
+</style>
+</head>
+<body>
+
+<!-- LOGIN SCREEN -->
+<div id="loginScreen" class="login-wrap">
+  <div class="login-card">
+    <div class="login-logo">ELECTRO APPARELS</div>
+    <div class="login-sub">Buyer Status Portal — Select your item to view PO status</div>
+    <label class="login-label">Select Item / SKU</label>
+    <select id="skuSelect" style="margin-bottom:18px">
+      <option value="">— Loading items… —</option>
+    </select>
+    <div id="loginErr" style="font-size:11px;color:var(--red);margin-bottom:10px;min-height:16px"></div>
+    <button class="btn btn-p" style="width:100%;padding:12px" onclick="doLogin()">View My PO Status →</button>
+    <div style="margin-top:18px;font-size:10px;color:var(--muted)">Read-only access · Data updates in real time</div>
+  </div>
+</div>
+
+<!-- PORTAL -->
+<div id="portal" class="hidden">
+  <header>
+    <div class="hlogo">ELECTRO APPARELS</div>
+    <div class="hright">
+      <span id="hSku" style="font-family:var(--font-m);color:var(--accent);font-size:11px"></span>
+      <span id="hDate" style="color:var(--muted)"></span>
+      <button class="btn btn-s btn-sm" onclick="changeItem()">← Change Item</button>
+    </div>
+  </header>
+
+  <div class="main">
+    <!-- Summary Stats -->
+    <div class="stats-row" id="statsRow"></div>
+
+    <!-- SKU Info Card -->
+    <div id="skuInfoCard" style="margin-bottom:20px"></div>
+
+    <!-- Export Bar -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+      <div style="font-family:var(--font-d);font-size:20px;letter-spacing:.5px">PO STATUS TABLE</div>
+      <div class="export-bar">
+        <button class="btn btn-sm" style="background:rgba(34,197,94,.12);color:var(--green);border:1px solid rgba(34,197,94,.3)" onclick="exportExcel()">⬇ Export Excel</button>
+        <button class="btn btn-sm" style="background:rgba(59,130,246,.12);color:var(--accent2);border:1px solid rgba(59,130,246,.3)" onclick="exportPDF()">🖨 Export PDF</button>
+      </div>
+    </div>
+
+    <!-- PO Table -->
+    <div class="tbl-wrap">
+      <div id="poTableWrap"></div>
+    </div>
+
+    <div style="font-size:10px;color:var(--muted);text-align:center;margin-top:8px">
+      Data is read-only · Last refreshed: <span id="lastRefresh"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── DATE UTILS ──────────────────────────────────────────────────
+function pd(v){if(!v)return null;if(v instanceof Date)return isNaN(v)?null:v;const s=String(v).trim();const m1=s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);if(m1)return new Date(+m1[3],+m1[2]-1,+m1[1]);const m2=s.match(/^(\d{4})-(\d{2})-(\d{2})$/);if(m2)return new Date(+m2[1],+m2[2]-1,+m2[3]);const d=new Date(s);return isNaN(d)?null:d;}
+function fd(v){const d=pd(v);if(!d)return '—';return d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});}
+function tid(v){const d=pd(v);if(!d||isNaN(d))return '';return d.toISOString().split('T')[0];}
+function poStatus(p){
+  const del=pd(p.deliveryDate),eff=pd(p.extDate||p.apptDate);
+  if(!del||!eff)return 'pending';
+  const diff=Math.round((eff-del)/864e5);
+  if(diff<=0)return 'ok';if(diff<=5)return 'grace';return 'delayed';
+}
+function dispatchDeadline(p){
+  const d=pd(p.deliveryDate);if(!d)return null;
+  return new Date(d.getTime()-(p.site==='1093'?2:3)*864e5);
+}
+
+// ── STATE ───────────────────────────────────────────────────────
+let state={pos:[],warehouses:[],suppliers:[],transporters:[],lrRecords:[]};
+
+const API_BASE = 'https://electro-backend-divk.onrender.com/api';
+async function bApi(path){
+  const r=await fetch(API_BASE+path);
+  if(!r.ok)throw new Error(r.statusText);
+  return r.json();
+}
+let currentSku='';
+
+async function loadState(){
+  try{
+    const d=await bApi('/state');
+    state.pos=d.pos||[];
+    state.warehouses=d.warehouses||[];
+    state.suppliers=d.suppliers||[];
+    state.transporters=d.transporters||[];
+    state.lrRecords=d.lrRecords||[];
+    // For any site code in POs that has no warehouse entry, create a placeholder
+    const knownCodes=new Set(state.warehouses.map(w=>w.code));
+    [...new Set(state.pos.map(p=>p.site).filter(Boolean))].forEach(code=>{
+      if(!knownCodes.has(code))
+        state.warehouses.push({id:'WH'+code,code,name:'Site '+code,address:'',email:''});
+    });
+    return true;
+  }catch(e){return false;}
+}
+// Returns best display name for a warehouse code
+function whName(code){
+  if(!code)return '—';
+  const w=state.warehouses.find(w=>w.code===code);
+  return (w&&w.name&&w.name.trim())?w.name:'Site '+code;
+}
+
+// ── LOGIN ───────────────────────────────────────────────────────
+async function initLogin(){
+  await loadState();
+  // Get unique SKUs from POs
+  const skus=[...new Set(state.pos.map(p=>p.article||'').filter(Boolean))];
+  const sel=document.getElementById('skuSelect');
+  if(!skus.length){
+    sel.innerHTML='<option value="">— No items found —</option>';
+    return;
+  }
+  sel.innerHTML='<option value="">— Select an item —</option>'
+    +skus.map(art=>{
+      const sample=state.pos.find(p=>p.article===art);
+      return '<option value="'+art+'">'+art+(sample?' — '+sample.description.slice(0,40):'')+'</option>';
+    }).join('');
+}
+
+async function doLogin(){
+  const art=document.getElementById('skuSelect').value;
+  const err=document.getElementById('loginErr');
+  if(!art){err.textContent='Please select an item.';return;}
+  await loadState();
+  const pos=state.pos.filter(p=>p.article===art);
+  if(!pos.length){err.textContent='No POs found for this item.';return;}
+  err.textContent='';
+  currentSku=art;
+  document.getElementById('loginScreen').classList.add('hidden');
+  document.getElementById('portal').classList.remove('hidden');
+  renderPortal();
+}
+
+function changeItem(){
+  document.getElementById('portal').classList.add('hidden');
+  document.getElementById('loginScreen').classList.remove('hidden');
+  currentSku='';
+  initLogin(); // refresh SKU list with latest data
+}
+
+// ── RENDER ──────────────────────────────────────────────────────
+async function renderPortal(){
+  await loadState(); // always fresh
+  const pos=state.pos.filter(p=>p.article===currentSku);
+  const sample=pos[0]||{};
+
+  // Header
+  document.getElementById('hSku').textContent=currentSku+' — '+(sample.description||'').slice(0,35);
+  document.getElementById('hDate').textContent=new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+  document.getElementById('lastRefresh').textContent=new Date().toLocaleTimeString('en-IN');
+
+  // Stats
+  const totalQty=pos.reduce((a,p)=>a+( p.qty||0),0);
+  const onTime=pos.filter(p=>poStatus(p)==='ok').length;
+  const grace=pos.filter(p=>poStatus(p)==='grace').length;
+  const delayed=pos.filter(p=>poStatus(p)==='delayed').length;
+  const pending=pos.filter(p=>poStatus(p)==='pending').length;
+  const withLR=pos.filter(p=>state.lrRecords.find(r=>r.poId===p.id)).length;
+  const withGRN=pos.filter(p=>{const r=state.lrRecords.find(r=>r.poId===p.id);return r&&r.grnDate;}).length;
+
+  document.getElementById('statsRow').innerHTML=
+    stat('Total POs',pos.length,'orders','')
+   +stat('Total Pieces',totalQty.toLocaleString('en-IN'),'across all POs','b')
+   +stat('On Time',onTime,'deliveries','g')
+   +stat('Grace Period',grace,'1–5 days late','o')
+   +stat('Delayed',delayed,'6+ days late','r')
+   +stat('GRN Received',withGRN,'of '+pos.length+' POs','g');
+
+  function stat(lbl,val,sub,cls){
+    return '<div class="stat '+cls+'"><div class="stat-val">'+val+'</div><div class="stat-lbl">'+lbl+'</div><div class="stat-sub">'+sub+'</div></div>';
+  }
+
+  // SKU info card
+  document.getElementById('skuInfoCard').innerHTML=
+    '<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 20px;display:flex;flex-wrap:wrap;gap:20px;align-items:center">'
+    +'<div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Article Code</div><div style="font-family:var(--font-m);font-size:14px;color:var(--accent);margin-top:2px">'+currentSku+'</div></div>'
+    +'<div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Description</div><div style="font-size:13px;font-weight:600;margin-top:2px">'+(sample.description||'—')+'</div></div>'
+    +'<div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">MRP</div><div style="font-size:13px;font-weight:600;color:var(--green);margin-top:2px">₹'+(sample.mrp||'—')+'</div></div>'
+    +'<div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Total Qty</div><div style="font-size:13px;font-weight:600;margin-top:2px">'+totalQty.toLocaleString('en-IN')+' pcs</div></div>'
+    +'<div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Warehouses</div><div style="font-size:12px;margin-top:2px">'
+    +[...new Set(pos.map(p=>p.site))].map(s=>{const w=state.warehouses.find(w=>w.code===s);return whName(s);}).join(' · ')
+    +'</div></div>'
+    +'</div>';
+
+  // Build table rows using string concat (no nested template literals)
+  const sorted=[...pos].sort((a,b)=>(pd(a.extDate||a.apptDate||a.deliveryDate)||0)-(pd(b.extDate||b.apptDate||b.deliveryDate)||0));
+  var rows='';
+  sorted.forEach(function(p){
+    var wh=state.warehouses.find(function(w){return w.code===p.site;});
+    var lr=state.lrRecords.find(function(r){return r.poId===p.id;});
+    var tr=lr&&state.transporters.find(function(t){return t.id===lr.transporterId;});
+    var trName=lr?(lr.transporterName||(tr?tr.name:'—')):'—';
+    var st=poStatus(p);
+    var ddln=dispatchDeadline(p);
+    // Status badge
+    var badgeCls=st==='ok'?'badge-ok':st==='grace'?'badge-grace':st==='delayed'?'badge-delayed':'badge-pending';
+    var badgeTxt=st==='ok'?'✅ On Time':st==='grace'?'⚠️ Grace':st==='delayed'?'🔴 Delayed':'⏳ Pending';
+    // GRN badge
+    var grnBadge='<span class="badge badge-awaiting">⏳ Awaiting</span>';
+    if(lr&&lr.grnDate){
+      var grnD=pd(lr.grnDate);var delivDue=pd(p.deliveryDate);
+      if(grnD&&delivDue){
+        var diff=Math.round((grnD.getTime()-delivDue.getTime())/864e5);
+        if(diff<=0)grnBadge='<span class="badge badge-grn">✅ Received On Time</span>';
+        else if(diff<=5)grnBadge='<span class="badge badge-grace">⚠️ Received +'+diff+'d</span>';
+        else grnBadge='<span class="badge badge-delayed">🔴 Received Late +'+diff+'d</span>';
+      }
+    }else if(!lr){
+      grnBadge='<span class="badge badge-pending">Not Dispatched</span>';
+    }
+
+    rows+='<tr>'
+      +'<td style="font-family:var(--font-m);color:var(--accent)">'+p.poNum+'</td>'
+      +'<td>'+(p.qty||0).toLocaleString('en-IN')+' pcs</td>'
+      +'<td>'+(whName(p.site))+'</td>'
+      +'<td style="color:var(--red)">'+fd(p.deliveryDate)+'</td>'
+      +'<td style="color:var(--accent2)">'+fd(p.apptDate||p.extDate)+'</td>'
+      +'<td>'+(ddln?fd(ddln):'—')+'</td>'
+      +'<td>'+(lr&&lr.dispatchDate?fd(lr.dispatchDate):'—')+'</td>'
+      +'<td style="font-family:var(--font-m)">'+(lr?lr.lrNumber:'—')+'</td>'
+      +'<td>'+(lr&&lr.grnDate?fd(lr.grnDate):'—')+'</td>'
+      +'<td><span class="badge '+badgeCls+'">'+badgeTxt+'</span></td>'
+      +'<td>'+grnBadge+'</td>'
+      +(p.delayReason?'<td style="font-size:10px;color:var(--muted)">'+p.delayReason+'</td>':'<td style="color:var(--muted)">—</td>')
+      +'</tr>';
+  });
+
+  document.getElementById('poTableWrap').innerHTML=
+    '<table>'
+    +'<thead><tr>'
+    +'<th>PO Number</th><th>Qty</th><th>Warehouse</th>'
+    +'<th>PO Exp. Date</th><th>Appt Date</th><th>Dispatch Deadline</th>'
+    +'<th>Dispatched On</th><th>LR Number</th><th>GRN Date</th>'
+    +'<th>Delivery Status</th><th>GRN Status</th><th>Delay Reason</th>'
+    +'</tr></thead>'
+    +'<tbody>'+rows+'</tbody>'
+    +'</table>';
+}
+
+// ── EXPORT EXCEL ─────────────────────────────────────────────────
+function exportExcel(){
+  const pos=state.pos.filter(p=>p.article===currentSku);
+  const sorted=[...pos].sort((a,b)=>(pd(a.extDate||a.apptDate||a.deliveryDate)||0)-(pd(b.extDate||b.apptDate||b.deliveryDate)||0));
+  const rows=[['PO Number','Qty (pcs)','Warehouse','PO Expected Date','Appointment Date','Dispatch Deadline','Dispatched On','LR Number','GRN Date','Delivery Status','GRN Status','Delay Reason']];
+  sorted.forEach(function(p){
+    var wh=state.warehouses.find(function(w){return w.code===p.site;});
+    var lr=state.lrRecords.find(function(r){return r.poId===p.id;});
+    var st=poStatus(p);
+    var ddln=dispatchDeadline(p);
+    var stTxt=st==='ok'?'On Time':st==='grace'?'Grace Period':st==='delayed'?'Delayed':'Pending';
+    var grnTxt='Not Dispatched';
+    if(lr&&lr.grnDate){
+      var grnD=pd(lr.grnDate);var delivDue=pd(p.deliveryDate);
+      if(grnD&&delivDue){
+        var diff=Math.round((grnD.getTime()-delivDue.getTime())/864e5);
+        grnTxt=diff<=0?'Received On Time':diff<=5?'Received Grace +'+diff+'d':'Received Late +'+diff+'d';
+      }
+    }else if(lr){grnTxt='Awaiting GRN';}
+    rows.push([
+      p.poNum,(p.qty||0),
+      whName(p.site),
+      p.deliveryDate||'',p.apptDate||p.extDate||'',
+      ddln?tid(ddln):'',
+      lr&&lr.dispatchDate?lr.dispatchDate:'',
+      lr?lr.lrNumber:'',
+      lr&&lr.grnDate?lr.grnDate:'',
+      stTxt,grnTxt,p.delayReason||''
+    ]);
+  });
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols']=[13,10,22,14,14,14,13,14,12,12,18,22].map(function(w){return{wch:w};});
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'PO Status');
+  XLSX.writeFile(wb,'ElectroApparels_Buyer_'+currentSku+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
+}
+
+// ── EXPORT PDF ───────────────────────────────────────────────────
+function exportPDF(){
+  const pos=state.pos.filter(p=>p.article===currentSku);
+  const sorted=[...pos].sort((a,b)=>(pd(a.extDate||a.apptDate||a.deliveryDate)||0)-(pd(b.extDate||b.apptDate||b.deliveryDate)||0));
+  const totalQty=pos.reduce(function(a,p){return a+(p.qty||0);},0);
+  const onTime=pos.filter(p=>poStatus(p)==='ok').length;
+  const delayed=pos.filter(p=>poStatus(p)==='delayed').length;
+  const grace=pos.filter(p=>poStatus(p)==='grace').length;
+  const sample=pos[0]||{};
+
+  var rows='';
+  sorted.forEach(function(p){
+    var wh=state.warehouses.find(function(w){return w.code===p.site;});
+    var lr=state.lrRecords.find(function(r){return r.poId===p.id;});
+    var st=poStatus(p);
+    var ddln=dispatchDeadline(p);
+    var stColor=st==='ok'?'#16a34a':st==='grace'?'#ea580c':st==='delayed'?'#dc2626':'#888';
+    var stTxt=st==='ok'?'On Time':st==='grace'?'Grace':st==='delayed'?'DELAYED':'Pending';
+    var grnTxt='—';var grnColor='#888';
+    if(lr&&lr.grnDate){
+      var grnD=pd(lr.grnDate);var delivDue=pd(p.deliveryDate);
+      if(grnD&&delivDue){
+        var diff=Math.round((grnD.getTime()-delivDue.getTime())/864e5);
+        if(diff<=0){grnTxt='On Time';grnColor='#16a34a';}
+        else if(diff<=5){grnTxt='Grace +'+diff+'d';grnColor='#ea580c';}
+        else{grnTxt='Late +'+diff+'d';grnColor='#dc2626';}
+      }
+    }else if(lr){grnTxt='Awaiting';}
+    rows+='<tr>'
+      +'<td>'+p.poNum+'</td>'
+      +'<td style="text-align:right">'+(p.qty||0).toLocaleString('en-IN')+'</td>'
+      +'<td>'+(whName(p.site))+'</td>'
+      +'<td>'+(p.deliveryDate||'—')+'</td>'
+      +'<td>'+(p.apptDate||p.extDate||'—')+'</td>'
+      +'<td>'+(ddln?tid(ddln):'—')+'</td>'
+      +'<td>'+(lr&&lr.dispatchDate?lr.dispatchDate:'—')+'</td>'
+      +'<td style="font-family:monospace">'+(lr?lr.lrNumber:'—')+'</td>'
+      +'<td>'+(lr&&lr.grnDate?lr.grnDate:'—')+'</td>'
+      +'<td style="color:'+stColor+';font-weight:700">'+stTxt+'</td>'
+      +'<td style="color:'+grnColor+'">'+grnTxt+'</td>'
+      +'<td style="font-size:9px;color:#666">'+(p.delayReason||'—')+'</td>'
+      +'</tr>';
+  });
+
+  // Build print overlay inside the page itself — no window.open needed
+  var existing=document.getElementById('printOverlay');
+  if(existing)existing.remove();
+
+  var overlay=document.createElement('div');
+  overlay.id='printOverlay';
+  overlay.style.cssText='position:fixed;inset:0;background:#fff;z-index:9999;overflow:auto;padding:20px;font-family:Arial,sans-serif;font-size:11px;color:#111;';
+  overlay.innerHTML=
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;border-bottom:2px solid #111;padding-bottom:10px">'
+    +'<div><div style="font-size:22px;font-weight:900;letter-spacing:1px">ELECTRO APPARELS — BUYER REPORT</div>'
+    +'<div style="font-size:10px;color:#666">Generated: '+new Date().toLocaleString('en-IN')+'</div></div>'
+    +'<div style="display:flex;gap:8px;">'
+    +'<button onclick="window.print()" style="padding:8px 16px;background:#111;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:12px;font-weight:600">🖨 Print / Save PDF</button>'
+    +'<button onclick="document.getElementById(\'printOverlay\').remove()" style="padding:8px 16px;background:#f5f5f5;color:#111;border:1px solid #ddd;border-radius:5px;cursor:pointer;font-size:12px">✕ Close</button>'
+    +'</div></div>'
+    +'<div style="background:#f5f5f5;border-radius:6px;padding:10px 14px;margin-bottom:12px;display:flex;gap:24px;flex-wrap:wrap">'
+    +'<span>Article: <strong>'+currentSku+'</strong></span>'
+    +'<span>Description: <strong>'+(sample.description||'—')+'</strong></span>'
+    +'<span>MRP: <strong>₹'+(sample.mrp||'—')+'</strong></span>'
+    +'<span>Total Qty: <strong>'+totalQty.toLocaleString('en-IN')+' pcs</strong></span>'
+    +'</div>'
+    +'<div style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap">'
+    +'<div style="background:#f5f5f5;border-radius:6px;padding:8px 14px;text-align:center"><div style="font-size:20px;font-weight:900">'+pos.length+'</div><div style="font-size:9px;color:#666;text-transform:uppercase">Total POs</div></div>'
+    +'<div style="background:#f5f5f5;border-radius:6px;padding:8px 14px;text-align:center"><div style="font-size:20px;font-weight:900;color:#16a34a">'+onTime+'</div><div style="font-size:9px;color:#666;text-transform:uppercase">On Time</div></div>'
+    +'<div style="background:#f5f5f5;border-radius:6px;padding:8px 14px;text-align:center"><div style="font-size:20px;font-weight:900;color:#ea580c">'+grace+'</div><div style="font-size:9px;color:#666;text-transform:uppercase">Grace Period</div></div>'
+    +'<div style="background:#f5f5f5;border-radius:6px;padding:8px 14px;text-align:center"><div style="font-size:20px;font-weight:900;color:#dc2626">'+delayed+'</div><div style="font-size:9px;color:#666;text-transform:uppercase">Delayed</div></div>'
+    +'</div>'
+    +'<table style="width:100%;border-collapse:collapse;font-size:10px;">'
+    +'<thead><tr style="background:#111;color:#fff">'
+    +'<th style="padding:7px 8px;text-align:left;font-size:9px;text-transform:uppercase">PO Number</th>'
+    +'<th style="padding:7px 8px;text-align:right;font-size:9px;text-transform:uppercase">Qty</th>'
+    +'<th style="padding:7px 8px;text-align:left;font-size:9px;text-transform:uppercase">Warehouse</th>'
+    +'<th style="padding:7px 8px;text-align:left;font-size:9px;text-transform:uppercase">PO Exp. Date</th>'
+    +'<th style="padding:7px 8px;text-align:left;font-size:9px;text-transform:uppercase">Appt Date</th>'
+    +'<th style="padding:7px 8px;text-align:left;font-size:9px;text-transform:uppercase">Dispatch By</th>'
+    +'<th style="padding:7px 8px;text-align:left;font-size:9px;text-transform:uppercase">Dispatched</th>'
+    +'<th style="padding:7px 8px;text-align:left;font-size:9px;text-transform:uppercase">LR Number</th>'
+    +'<th style="padding:7px 8px;text-align:left;font-size:9px;text-transform:uppercase">GRN Date</th>'
+    +'<th style="padding:7px 8px;text-align:left;font-size:9px;text-transform:uppercase">Del. Status</th>'
+    +'<th style="padding:7px 8px;text-align:left;font-size:9px;text-transform:uppercase">GRN Status</th>'
+    +'<th style="padding:7px 8px;text-align:left;font-size:9px;text-transform:uppercase">Delay Reason</th>'
+    +'</tr></thead><tbody>'+rows+'</tbody></table>'
+    +'<div style="margin-top:12px;font-size:9px;color:#aaa;border-top:1px solid #e5e7eb;padding-top:8px">'
+    +'Electro Apparels | Buyer Portal | Confidential | '+new Date().toLocaleDateString('en-IN')
+    +'</div>'
+    +'<style>@media print{button{display:none!important;}@page{margin:10mm;size:A4 landscape;}}</style>';
+
+  document.body.appendChild(overlay);
+}
+
+// ── INIT ─────────────────────────────────────────────────────────
+document.getElementById('hDate').textContent=new Date().toLocaleDateString('en-IN',{weekday:'short',day:'2-digit',month:'short',year:'numeric'}).toUpperCase();
+initLogin();
+
+// Auto-refresh every 60 seconds when portal is open
+setInterval(function(){
+  if(!document.getElementById('portal').classList.contains('hidden')){
+    renderPortal();
+  }
+},60000);
+</script>
+</body>
+</html>

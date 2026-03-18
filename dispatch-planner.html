@@ -227,7 +227,6 @@ select option{background:var(--surface2);}
     <span id="syncStatus" style="font-size:10px;font-family:var(--font-m);color:var(--green)">● Connecting…</span>
     <button class="btn btn-p btn-sm" onclick="openAssignModal()">🏷️ SKU → Supplier Map</button>
     <a href="supplier-portal.html" target="_blank" class="btn btn-s btn-sm" style="text-decoration:none">🏭 Supplier Portal ↗</a>
-    <button class="btn btn-s btn-sm" onclick="window.print()">🖨 Print</button>
     <span id="hdate" style="font-size:10px;color:var(--muted);font-family:var(--font-m)"></span>
   </div>
 </header>
@@ -260,12 +259,15 @@ select option{background:var(--surface2);}
       <button class="tab" onclick="mTab('sku',this)">📦 SKU Analysis</button>
       <button class="tab" onclick="mTab('ai',this)">🤖 AI Insights</button>
       <button class="tab" onclick="mTab('timeline',this)">📅 Timeline</button>
+      <button class="tab" onclick="mTab('lr',this)">📋 LR / GRN</button>
     </div>
     <div id="view-dashboard"></div>
     <div id="view-dispatch" style="display:none"></div>
     <div id="view-sku" style="display:none"></div>
     <div id="view-ai" style="display:none"></div>
     <div id="view-timeline" style="display:none"></div>
+    <div id="view-lr" style="display:none"></div>
+    <div id="view-lr" style="display:none"></div>
   </div>
 </div>
 
@@ -278,16 +280,14 @@ select option{background:var(--surface2);}
     <div class="modal-title">🔗 Assign POs → Suppliers</div>
     <p style="font-size:11px;color:var(--muted);margin-bottom:12px">All POs arrive addressed to <strong style="color:var(--accent)">Electro Apparels</strong>. Assign each PO to the actual supplier who will manufacture/provide the goods. The transporter will pick up from that supplier's location.</p>
     <div id="assignBody"></div>
-    <div style="margin-top:12px;display:flex;gap:8px">
-      <button class="btn btn-p" onclick="saveSkuMap([])">Save Mapping</button>
-      <button class="btn btn-s" onclick="cm('mAssign')">Cancel</button>
-    </div>
   </div>
 </div>
 <div class="moverlay hidden" id="mDelay">
   <div class="modal" style="width:520px">
-    <div class="modal-title">⚠️ Delay Reasons Required</div>
-    <div id="mDelayB"></div>
+    <div class="modal-title">⚠️ Delay / Grace Period Reasons</div>
+    <p style="font-size:11px;color:var(--muted);margin-bottom:12px">Provide a reason for each PO below.</p>
+    <div id="mDelayB" style="max-height:55vh;overflow-y:auto;margin-bottom:12px"></div>
+    <div style="display:flex;gap:8px"><button class="btn btn-p" onclick="saveDelays()">Save All Reasons</button><button class="btn btn-s" onclick="cm('mDelay')">Later</button></div>
   </div>
 </div>
 <div class="moverlay hidden" id="mTR">
@@ -311,8 +311,9 @@ let S={
   pos:[],
   warehouses:[
     {id:'WH1093',code:'1093',name:'ASL WM DC Manoharabad',address:'Manoharabad Village, Medak, Telangana 502336',email:'Receiving.1093@dmartindia.com'},
-    {id:'WH1036',code:'1036',name:'DMart Warehouse 1036',address:'',email:''},
-    {id:'WH1033',code:'1033',name:'DMart Warehouse 1033',address:'',email:''},
+    {id:'WH1036',code:'1036',name:'DMart DC Khopoli',address:'',email:''},
+    {id:'WH1033',code:'1033',name:'DMart DC Nagpur',address:'',email:''},
+    {id:'WH1091',code:'1091',name:'ASL WM DC Graas Kulana',address:'Village Kulana, NH 352, Jhajjar, Haryana',email:'receiving.1091@dmartindia.com'},,
   ],
   suppliers:[],
   // SKU → Supplier permanent mapping: { 'articleCode': 'supplierId' }
@@ -325,6 +326,7 @@ let S={
   panelTab:'pos',
   panelOpen:true,
   aiHistory:[],
+  lrRecords:[],
 };
 
 // ==================== DATE UTILS ====================
@@ -333,7 +335,27 @@ function fd(v){const d=pd(v);if(!d)return '—';return d.toLocaleDateString('en-
 function tid(v){const d=pd(v);if(!d||isNaN(d))return '';return d.toISOString().split('T')[0];}
 function ddiff(a,b){const da=pd(a),db=pd(b);if(!da||!db)return null;return Math.round((da-db)/(864e5));}
 function isOverdue(v){const d=pd(v);if(!d)return false;return d<new Date();}
-function isDelayed(p){const del=pd(p.deliveryDate);const eff=pd(p.extDate||p.apptDate);if(!del||!eff)return false;return eff>del;}
+// ── Dispatch deadline = deliveryDate - 3 calendar days ──
+function dispatchDeadline(p){
+  const d=pd(p.deliveryDate);if(!d)return null;
+  const days=p.site==='1093'?2:3; // 2 days for Manoharabad, 3 for others
+  return new Date(d.getTime()-days*864e5);
+}
+// ── Status of a PO based on effective date vs delivery date ──
+// Returns: 'ok' | 'grace' | 'delayed' | 'pending'
+function poStatus(p){
+  const del=pd(p.deliveryDate);
+  const eff=pd(p.extDate||p.apptDate);
+  if(!del)return 'pending';
+  if(!eff)return 'pending';
+  const diff=Math.round((eff.getTime()-del.getTime())/864e5);
+  if(diff<=0)return 'ok';
+  if(diff<=5)return 'grace';
+  return 'delayed';
+}
+function isDelayed(p){return poStatus(p)==='delayed';}
+function isGrace(p){return poStatus(p)==='grace';}
+function graceDaysUsed(p){const del=pd(p.deliveryDate);const eff=pd(p.extDate||p.apptDate);if(!del||!eff)return 0;return Math.max(0,Math.round((eff.getTime()-del.getTime())/864e5));}
 function getMonthKey(p){const d=pd(p.extDate||p.apptDate||p.deliveryDate);if(!d)return 'Unknown';return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
 function getMonthLabel(key){if(key==='Unknown')return key;const[y,m]=key.split('-');return MONTHS[+m-1]+' '+y;}
 
@@ -367,6 +389,7 @@ function renderPanelPOs(el){
       <input type="file" id="poUp" accept=".pdf,.xlsx,.xls,.csv" multiple onchange="handlePOUp(event)">
       <div class="upzone-icon">📄</div><strong style="font-size:11px">Upload POs</strong><p style="font-size:10px;color:var(--muted)">🤖 PDF auto-read · Excel · CSV</p>
     </div>
+    <input id="poSearch" placeholder="🔍 Search POs…" style="width:100%;margin-bottom:6px;font-size:11px;margin-top:6px" oninput="renderPOList()">
     <div id="poListEl"></div>`;
   renderPOList();
 }
@@ -416,36 +439,61 @@ async function parsePDFwithAI(file){
 
 function parseDMartPOText(text){
   const items=[];
-  const t=text.replace(/\s+/g,' ');
+  const t=text.replace(/\n/g,' ').replace(/\s+/g,' ');
+
+  // PO number
   const poMatch=t.match(/PO\s*#\s*(\d{8,12})/i);
   if(!poMatch)return null;
   const poNum=poMatch[1];
-  const pipeMatch=t.match(/\d{8,12}\s*\|\s*(\d{3,4})/);
-  const site=pipeMatch?pipeMatch[1]:'';
+
+  // Site code from email receiving.XXXX@dmartindia.com (most reliable)
+  const emailMatch=t.match(/receiving\.([a-z0-9]+)@dmartindia\.com/i);
+  const whEmail=emailMatch?'receiving.'+emailMatch[1]+'@dmartindia.com':'';
+  const site=emailMatch?emailMatch[1]:'';
+
+  // Global delivery date from Expc.Delv.Dt
   const dateMatch=t.match(/Expc\.?Delv\.?Dt\.?\s*(\d{2}[.\/]\d{2}[.\/]\d{4})/i);
-  let deliveryDate='';
-  if(dateMatch){
-    const p=dateMatch[1].split(/[.\/]/);
-    deliveryDate=p[2]+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0');
+  let globalDeliveryDate='';
+  if(dateMatch){const p=dateMatch[1].split(/[.\/]/);globalDeliveryDate=p[2]+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0');}
+
+  // Warehouse name
+  const whMatch=t.match(/ASL WM DC[^,\n]*/i)||t.match(/Avenue Supermarts[^,\n]*/i);
+  const whName=whMatch?whMatch[0].trim().slice(0,80):'';
+
+  // Parse each line item
+  // Pattern: SNO EAN DELDATE DESCRIPTION EA CASELOT BOXES QTY BPRICE 0.00 0.00 0.00 NETPRICE 0.00 CGST 0.00 LPRICE MRP TVALUE
+  const lineRe=/\b\d{1,2}\s+(\d{10,13})\s+(\d{2}\.\d{2}\.\d{4})\s+(.*?)\s+EA\s+\d+\s+\d+\s+(\d+)\s+([\d.]+)\s+0\.00\s+0\.00\s+0\.00\s+[\d.]+\s+0\.00\s+[\d.]+\s+0\.00\s+([\d.]+)\s+([\d.]+)/g;
+  let m;
+  while((m=lineRe.exec(t))!==null){
+    const rawDate=m[2].split('.');
+    const deliveryDate=rawDate[2]+'-'+rawDate[1].padStart(2,'0')+'-'+rawDate[0].padStart(2,'0');
+    const desc=m[3].replace(/\[EA\].*$/,'').replace(/HSN.*$/i,'').replace(/E\d+\/\w+\/\d+-\w+/,'').trim().slice(0,70);
+    items.push({
+      poNum,article:m[1],description:desc,
+      qty:parseInt(m[4]),
+      deliveryDate:deliveryDate||globalDeliveryDate,
+      site,whName,whAddress:'',whEmail,
+      price:parseFloat(m[5]).toFixed(2),
+      mrp:parseFloat(m[7]).toFixed(0)
+    });
   }
-  const emailMatch=t.match(/receiving\.[a-z0-9]+@dmartindia\.com/i);
-  const whEmail=emailMatch?emailMatch[0]:'';
-  const whMatch=t.match(/Avenue Supermarts[^,]*/i);
-  const whName=whMatch?whMatch[0].trim().slice(0,60):'';
-  const qtyMatch=t.match(/Total\s+([\d,]+)/i);
-  const totalQty=qtyMatch?parseInt(qtyMatch[1].replace(/,/g,'')):0;
-  const allNums=[...t.matchAll(/(\d{10,13})/g)].map(m=>m[1]);
-  const article=allNums.find(n=>n!==poNum)||'';
-  const descMatch=t.match(/([A-Z]{2,}(?:\s+[A-Z0-9\-\/]+){2,}@\d+)/);
-  const priceMatch=t.match(/([\d]+\.\d{2})\s+0\.00\s+0\.00\s+0\.00/);
-  const mrpMatch=t.match(/([\d]{2,4})\.00\s+[\d,]+\.00\s*$/);
-  if(poNum&&totalQty){
-    items.push({poNum,article,
-      description:descMatch?descMatch[1].trim().slice(0,70):'',
-      qty:totalQty,deliveryDate,site,
-      mrp:mrpMatch?mrpMatch[1]:'',
-      price:priceMatch?priceMatch[1]:'',
-      whName,whAddress:'',whEmail});
+
+  // Fallback for single-item or differently formatted POs
+  if(!items.length){
+    const allNums=[...t.matchAll(/(\d{10,13})/g)].map(m=>m[1]);
+    const article=allNums.find(n=>n!==poNum)||'';
+    const qtyMatch=t.match(/Total\s+([\d,]+)/i);
+    const totalQty=qtyMatch?parseInt(qtyMatch[1].replace(/,/g,'')):0;
+    const descMatch=t.match(/([A-Z]{2,}(?:\s+[A-Z0-9\-\/]+){2,}@\d+)/);
+    const priceMatch=t.match(/([\d]+\.\d{2})\s+0\.00\s+0\.00\s+0\.00/);
+    const mrpMatch=t.match(/(\d{2,4})\.00\s+[\d,]+\.00/);
+    if(poNum&&totalQty){
+      items.push({poNum,article,
+        description:descMatch?descMatch[1].trim().slice(0,70):'',
+        qty:totalQty,deliveryDate:globalDeliveryDate,site,
+        mrp:mrpMatch?mrpMatch[1]:'',price:priceMatch?priceMatch[1]:'',
+        whName,whAddress:'',whEmail});
+    }
   }
   return items.length?items:null;
 }
@@ -486,9 +534,10 @@ async function extractPDFText(file){
             s.onload=res;s.onerror=rej;
             document.head.appendChild(s);
           });
-          window.pdfjsLib.GlobalWorkerOptions.workerSrc=
-            'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
         }
+        // Always set workerSrc before getDocument to suppress 'fake worker' warning
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc=
+          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
         const pdf=await window.pdfjsLib.getDocument({data:e.target.result}).promise;
         let fullText='';
         for(let i=1;i<=pdf.numPages;i++){
@@ -598,7 +647,7 @@ function openSkuMapModal(skusToMap){
 
   const body=document.getElementById('assignBody');
   const titleEl=document.querySelector('#mAssign .modal-title');
-  if(titleEl) titleEl.textContent='🏷️ Map SKUs → Suppliers (One-Time Setup)';
+  if(titleEl) titleEl.textContent='🏷️ Map SKUs → Suppliers';
 
   body.innerHTML=`
     <div style="background:rgba(240,165,0,.08);border:1px solid rgba(240,165,0,.2);border-radius:7px;padding:11px 14px;margin-bottom:14px">
@@ -639,13 +688,13 @@ function openSkuMapModal(skusToMap){
       }).join('')}
     </div>`:''}
     <div style="display:flex;gap:8px;margin-top:14px">
-      <button class="btn btn-p" onclick="saveSkuMap(${JSON.stringify(skusToMap)})">Save Mapping &amp; Auto-Assign All POs</button>
+      <button class="btn btn-p" onclick="saveSkuMap()">Save Mapping &amp; Auto-Assign All POs</button>
       <button class="btn btn-s" onclick="cm('mAssign')">Skip for Now</button>
     </div>`;
   document.getElementById('mAssign').classList.remove('hidden');
 }
 
-function saveSkuMap(skusToMap){
+function saveSkuMap(){
   const allSelects=document.querySelectorAll('[data-art]');
   let saved=0;
   allSelects.forEach(el=>{
@@ -676,47 +725,56 @@ function showToast(msg){
 
 // ==================== DELAY CHECK ====================
 function checkDelays(){
-  const need=S.pos.filter(p=>isDelayed(p)&&!p.delayReason);
-  if(!need.length)return;
-  openDelayModal(need);
+  const delayed=S.pos.filter(p=>isDelayed(p)&&!p.delayReason);
+  const grace=S.pos.filter(p=>isGrace(p)&&!p.delayReason);
+  const all=[...delayed,...grace.filter(g=>!delayed.find(d=>d.id===g.id))];
+  if(!all.length)return;
+  openDelayModal(all);
 }
 function openDelayModal(list){
-  document.getElementById('mDelayB').innerHTML=`
-    <p style="font-size:11px;color:var(--muted);margin-bottom:11px">These POs have appointment date later than PO expected delivery date. Please provide a reason for each.</p>
-    <div style="max-height:360px;overflow-y:auto">
-      ${list.map(p=>{const diff=ddiff(pd(p.extDate||p.apptDate),pd(p.deliveryDate));
-        return `<div style="background:var(--surface2);border:1px solid rgba(249,115,22,.2);border-radius:5px;padding:9px 10px;margin-bottom:6px">
-          <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-            <span class="mono acc" style="font-size:11px">PO# ${p.poNum}</span>
-            <span class="badge o">+${diff} days</span>
-          </div>
-          <div style="font-size:10px;color:var(--muted);margin-bottom:5px">${p.description||p.article||'—'} · ${(p.qty||0).toLocaleString('en-IN')} pcs</div>
-          <div style="display:flex;gap:12px;font-size:10px;margin-bottom:6px">
-            <span>📦 PO Exp. Del: <strong class="red">${fd(p.deliveryDate)}</strong></span>
-            <span>📅 Appt: <strong class="org">${fd(p.extDate||p.apptDate)}</strong></span>
-          </div>
-          <input class="reason-inp" id="dr-${p.id}" value="${p.delayReason||''}" placeholder="e.g. Production delay, fabric shortage…">
-        </div>`;}).join('')}
-    </div>
-    <div style="display:flex;gap:8px;margin-top:11px">
-      <button class="btn btn-p" onclick="saveDelays(${JSON.stringify(list.map(p=>p.id))})">Save Reasons</button>
-      <button class="btn btn-s" onclick="cm('mDelay')">Skip for Now</button>
+  const el=document.getElementById('mDelayB')||document.querySelector('#mDelay>div>div:last-child');
+  const body=document.getElementById('mDelayB');
+  if(!body)return;
+  body.innerHTML=list.map(p=>{
+    const st=poStatus(p);
+    const days=graceDaysUsed(p);
+    const isGr=st==='grace';
+    const del=pd(p.deliveryDate);
+    const deadline=dispatchDeadline(p);
+    return `<div style="background:var(--surface2);border:1px solid ${isGr?'rgba(249,115,22,.3)':'rgba(239,68,68,.3)'};border-radius:7px;padding:11px 13px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:4px">
+        <div>
+          <span style="font-family:var(--font-m);font-size:11px;color:var(--accent)">${p.poNum}</span>
+          <span style="font-size:10px;color:var(--muted);margin-left:6px">${p.description}</span>
+        </div>
+        <span style="font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;background:${isGr?'rgba(249,115,22,.15)':'rgba(239,68,68,.12)'};color:${isGr?'var(--orange)':'var(--red)'}">${isGr?'⚠️ GRACE ('+days+' day'+( days===1?'':'s')+')':'🔴 DELAYED ('+days+' days)'}</span>
+      </div>
+      <div style="font-size:10px;color:var(--muted);margin-bottom:6px">
+        ${isGr
+          ? `Delivery date was <strong style="color:var(--text)">${fd(p.deliveryDate)}</strong> — appointment is <strong style="color:var(--orange)">${days} day${days===1?'':'s'} later</strong> (within 5-day grace). Please explain.`
+          : `Delivery date was <strong style="color:var(--text)">${fd(p.deliveryDate)}</strong> — appointment is <strong style="color:var(--red)">${days} days late</strong> (exceeds 5-day grace). This is a formal delay.`
+        }
+        <br>Supplier must dispatch by <strong style="color:var(--accent)">${fd(deadline)}</strong> (3 days before delivery).
+      </div>
+      <input id="dr-${p.id}" value="${p.delayReason||''}" placeholder="${isGr?'Reason for using grace days (required)…':'Reason for delay (required)…'}" style="width:100%;font-size:11px">
     </div>`;
+  }).join('');
   document.getElementById('mDelay').classList.remove('hidden');
 }
-function saveDelays(ids){ids.forEach(id=>{const el=document.getElementById('dr-'+id);if(el){const po=S.pos.find(p=>p.id===id);if(po)po.delayReason=el.value;}});cm('mDelay');refreshAll();}
+function saveDelays(){document.querySelectorAll('[id^="dr-"]').forEach(el=>{const id=el.id.slice(3);const po=S.pos.find(p=>p.id===id);if(po)po.delayReason=el.value;});cm('mDelay');refreshAll();}
 
 // ==================== MAIN TABS ====================
 function mTab(t,el){
   S.tab=t;
   document.querySelectorAll('.tab').forEach(e=>e.classList.remove('active'));
   if(el)el.classList.add('active');
-  ['dashboard','dispatch','sku','ai','timeline'].forEach(v=>document.getElementById('view-'+v).style.display=v===t?'':'none');
+  ['dashboard','dispatch','sku','ai','timeline','lr'].forEach(v=>document.getElementById('view-'+v).style.display=v===t?'':'none');
   if(t==='dashboard')renderDashboard();
   else if(t==='dispatch')renderDispatch();
   else if(t==='sku')renderSKU();
   else if(t==='ai')renderAI();
   else if(t==='timeline')renderTimeline();
+  else if(t==='lr')renderLR();
 }
 function cm(id){document.getElementById(id).classList.add('hidden');}
 // Click outside modal to close
@@ -728,6 +786,7 @@ function renderDashboard(){
   const totalQty=S.pos.reduce((a,p)=>a+p.qty,0);
   const overdue=S.pos.filter(p=>isOverdue(p.extDate||p.apptDate||p.deliveryDate)).length;
   const delayed=S.pos.filter(p=>isDelayed(p)).length;
+  const graceCount=S.pos.filter(p=>isGrace(p)).length;
   const unassigned=S.pos.filter(p=>!p.supplierId).length;
   const noReason=S.pos.filter(p=>isDelayed(p)&&!p.delayReason).length;
 
@@ -740,10 +799,10 @@ function renderDashboard(){
     <div class="stats-row">
       <div class="stat"><div class="stat-lbl">Total POs</div><div class="stat-val">${S.pos.length}</div><div class="stat-sub">from Electro Apparels</div></div>
       <div class="stat b"><div class="stat-lbl">Total Pieces</div><div class="stat-val">${totalQty.toLocaleString('en-IN')}</div><div class="stat-sub">across all POs</div></div>
-      <div class="stat o"><div class="stat-lbl">Delayed</div><div class="stat-val">${delayed}</div><div class="stat-sub">appt &gt; PO date</div></div>
-      <div class="stat r"><div class="stat-lbl">Overdue</div><div class="stat-val">${overdue}</div><div class="stat-sub">past appt date</div></div>
+      <div class="stat r"><div class="stat-lbl">Delayed</div><div class="stat-val">${delayed}</div><div class="stat-sub">6+ days past PO date</div></div>
+      <div class="stat o"><div class="stat-lbl">Grace Period</div><div class="stat-val">${graceCount}</div><div class="stat-sub">1–5 days · reason needed</div></div>
+      <div class="stat g"><div class="stat-lbl">On Time</div><div class="stat-val">${S.pos.filter(p=>poStatus(p)==='ok').length}</div><div class="stat-sub">within PO date ✓</div></div>
       <div class="stat p"><div class="stat-lbl">Unmapped SKUs</div><div class="stat-val">${getUnmappedSKUs().length}</div><div class="stat-sub">${getUnmappedSKUs().length===0?'all mapped ✓':'need supplier'}</div></div>
-      <div class="stat g"><div class="stat-lbl">Suppliers</div><div class="stat-val">${S.suppliers.length}</div><div class="stat-sub">providing goods</div></div>
       <div class="stat t"><div class="stat-lbl">Transporters</div><div class="stat-val">${S.transporters.length}</div><div class="stat-sub">${getUnmappedWHs().length===0&&S.warehouses.length>0?'all WHs mapped ✓':getUnmappedWHs().length+' WH(s) unmapped'}</div></div>
     </div>
 
@@ -1143,7 +1202,10 @@ function buildDispatchCards(){
               <div class="tbl-wrap" style="border-radius:5px">
                 <table><thead><tr><th>PO #</th><th>Article</th><th>Description</th><th>Qty</th><th>MRP</th><th>PO Exp. Del.</th><th>Appointment</th><th>Delay</th><th>Reason</th></tr></thead>
                 <tbody>${sps.map(p=>{
-                  const dl=isDelayed(p);const diff=dl?ddiff(pd(p.extDate||p.apptDate),pd(p.deliveryDate)):0;
+                  const st=poStatus(p);const dl=st==='delayed';const gr=st==='grace';
+            const diff=(dl||gr)?ddiff(pd(p.extDate||p.apptDate),pd(p.deliveryDate)):0;
+            const ddln=dispatchDeadline(p);const ddlnStr=ddln?fd(ddln):'—';
+            const lrEntry=S.lrRecords.find(r=>r.poId===p.id);
                   return `<tr>
                     <td class="mono acc" style="font-size:10px">${p.poNum}</td>
                     <td class="mono" style="font-size:9px">${p.article||'—'}</td>
@@ -1166,9 +1228,662 @@ function buildDispatchCards(){
 }
 function clearF(){['fWH','fSup','fStatus'].forEach(i=>{const el=document.getElementById(i);if(el)el.value='';});const fd2=document.getElementById('fDate');if(fd2)fd2.value='';buildDispatchCards();}
 
+// ==================== MISSING HELPERS ====================
+function getUnmappedWHs(){return S.warehouses.filter(w=>!S.whTransporterMap[w.code]);}
+
+function renderTimeline(){
+  const el=document.getElementById('view-timeline');
+  if(!el)return;
+  const sorted=[...S.pos].sort((a,b)=>(pd(a.extDate||a.apptDate||a.deliveryDate)||new Date(0))-(pd(b.extDate||b.apptDate||b.deliveryDate)||new Date(0)));
+  el.innerHTML=`<div style="padding:20px">
+    <div style="font-family:var(--font-d);font-size:22px;color:var(--accent);margin-bottom:16px">TIMELINE VIEW</div>
+    ${sorted.map(p=>{
+      const sup=S.suppliers.find(s=>s.id===p.supplierId);
+      const delayed=isDelayed(p);
+      const eff=p.extDate||p.apptDate;
+      return `<div style="display:flex;gap:12px;margin-bottom:10px;align-items:flex-start">
+        <div style="min-width:80px;font-size:10px;font-family:var(--font-m);color:var(--muted);text-align:right;padding-top:4px">${fd(eff||p.deliveryDate)}</div>
+        <div style="width:2px;background:${delayed?'var(--red)':'var(--border)'};min-height:40px;margin-top:4px;flex-shrink:0"></div>
+        <div style="background:var(--surface2);border:1px solid ${delayed?'rgba(239,68,68,.3)':'var(--border)'};border-radius:6px;padding:8px 12px;flex:1">
+          <div style="font-family:var(--font-m);font-size:11px;color:var(--accent)">${p.poNum}</div>
+          <div style="font-size:11px">${p.description}</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:2px">${p.qty.toLocaleString('en-IN')} pcs · ${sup?sup.name:'Unassigned'} · Site ${p.site||'—'} ${delayed?'<span style="color:var(--red)">⚠ DELAYED</span>':''}</div>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+function renderTrList(){
+  const el=document.getElementById('trListEl');
+  if(!el)return;
+  if(!S.transporters.length){el.innerHTML='<p style="color:var(--muted);font-size:11px">No transporters added yet.</p>';return;}
+  el.innerHTML=S.transporters.map(t=>{
+    const mapped=Object.entries(S.whTransporterMap).filter(([,v])=>v===t.id).map(([k])=>k);
+    return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:9px 10px;margin-bottom:6px">
+      <div style="font-size:12px;font-weight:600">${t.name}</div>
+      <div style="font-size:10px;color:var(--muted)">${t.vehicle||''} ${t.phone?'· '+t.phone:''}</div>
+      <div style="font-size:10px;margin-top:3px">Routes: ${mapped.length?mapped.join(', '):'none assigned'}</div>
+      <div style="margin-top:5px;display:flex;gap:5px">
+        <button class="btn btn-xs btn-s" onclick="openTrModal('${t.id}')">Edit</button>
+        <button class="btn btn-xs" style="background:rgba(239,68,68,.12);color:var(--red);border:1px solid rgba(239,68,68,.2)" onclick="deleteTr('${t.id}')">Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function renderSupList(){
+  const el=document.getElementById('supListEl');if(!el)return;
+  let allProd={};
+  try{const r=await api('GET','/production');allProd=r||{};}catch(e){}
+  el.innerHTML=S.suppliers.map(s=>{
+    const pos=S.pos.filter(p=>p.supplierId===s.id);
+    const arts=[...new Set(pos.map(p=>p.article||'?'))];
+    const prod=allProd[s.id];
+    return `<div style="background:var(--surface2);border:1px solid ${s.color}33;border-radius:6px;padding:9px 10px;margin-bottom:6px">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
+        <span style="width:8px;height:8px;border-radius:50%;background:${s.color};display:inline-block"></span>
+        <span style="font-size:12px;font-weight:600">${s.name}</span>
+      </div>
+      <div style="font-size:10px;color:var(--muted)">${s.city||'—'} ${s.phone?'· '+s.phone:''}</div>
+      ${s.address?`<div style="font-size:10px;color:var(--muted)">📍 ${s.address}</div>`:''}
+      <div style="font-size:10px;margin-top:4px">${pos.length} POs · ${arts.map(a=>`<span style="background:var(--surface3);border-radius:3px;padding:1px 4px;font-size:9px;font-family:var(--font-m)">${a}</span>`).join(' ')}</div>
+      ${prod?`<div style="font-size:9px;color:var(--green);margin-top:3px">📦 Production data available</div>`:'<div style="font-size:9px;color:var(--muted);margin-top:3px;font-style:italic">No production update yet</div>'}
+      <div style="margin-top:5px;display:flex;gap:5px">
+        <button class="btn btn-xs btn-s" onclick="openSupModal('${s.id}')">Edit</button>
+        <button class="btn btn-xs" style="background:rgba(239,68,68,.12);color:var(--red);border:1px solid rgba(239,68,68,.2)" onclick="deleteSup('${s.id}')">Delete</button>
+      </div>
+    </div>`;
+  }).join('')||'<p style="color:var(--muted);font-size:11px">No suppliers yet.</p>';
+}
+
+function openPOModal(id, pre){
+  const po=id?S.pos.find(p=>p.id===id):null;
+  const pf=po||pre||{};
+  document.getElementById('mPOt').textContent=po?`Edit PO #${po.poNum}`:'Add PO';
+  const whO=S.warehouses.map(w=>`<option value="${w.code}" ${(pf.site)===w.code?'selected':''}>${w.name||w.code} (${w.code})</option>`).join('');
+  const sO=`<option value="">— Unassigned —</option>`+S.suppliers.map(s=>`<option value="${s.id}" ${pf.supplierId===s.id?'selected':''}>${s.name}</option>`).join('');
+  document.getElementById('mPOb').innerHTML=`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px">
+      <div><label style="font-size:11px;color:var(--muted)">PO Number *</label><input id="mp1" value="${pf.poNum||''}" style="width:100%;margin-top:3px"></div>
+      <div><label style="font-size:11px;color:var(--muted)">Article Code</label><input id="mp2" value="${pf.article||''}" style="width:100%;margin-top:3px"></div>
+    </div>
+    <div style="margin-bottom:9px"><label style="font-size:11px;color:var(--muted)">Description</label><input id="mp3" value="${pf.description||''}" style="width:100%;margin-top:3px"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px;margin-bottom:9px">
+      <div><label style="font-size:11px;color:var(--muted)">Qty (pcs)</label><input id="mp4" type="number" value="${pf.qty||''}" style="width:100%;margin-top:3px"></div>
+      <div><label style="font-size:11px;color:var(--muted)">MRP (₹)</label><input id="mp5" value="${pf.mrp||''}" style="width:100%;margin-top:3px"></div>
+      <div><label style="font-size:11px;color:var(--muted)">Base Price (₹)</label><input id="mp6" value="${pf.price||''}" style="width:100%;margin-top:3px"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px;margin-bottom:9px">
+      <div><label style="font-size:11px;color:var(--muted)">Delivery Date</label><input id="mp7" type="date" value="${tid(pf.deliveryDate)}" style="width:100%;margin-top:3px"></div>
+      <div><label style="font-size:11px;color:var(--muted)">Appointment Date</label><input id="mp8" type="date" value="${tid(pf.apptDate)}" style="width:100%;margin-top:3px"></div>
+      <div><label style="font-size:11px;color:var(--muted)">Extension Date</label><input id="mp9" type="date" value="${tid(pf.extDate)}" style="width:100%;margin-top:3px"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px">
+      <div><label style="font-size:11px;color:var(--muted)">Warehouse Site</label><select id="mp10" style="width:100%;margin-top:3px"><option value="">— Select —</option>${whO}</select></div>
+      <div><label style="font-size:11px;color:var(--muted)">Supplier</label><select id="mp11" style="width:100%;margin-top:3px">${sO}</select></div>
+    </div>
+    <div style="margin-bottom:13px"><label style="font-size:11px;color:var(--muted)">Delay Reason</label><input id="mp12" value="${pf.delayReason||''}" placeholder="Leave blank if no delay" style="width:100%;margin-top:3px"></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-p" onclick="savePO('${id||''}')">Save</button>
+      <button class="btn btn-s" onclick="cm('mPO')">Cancel</button>
+      ${id?`<button class="btn" style="background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.3)" onclick="deletePO('${id}')">Delete</button>`:''}
+    </div>`;
+  document.getElementById('mPO').classList.remove('hidden');
+}
+
+function savePO(id){
+  const poNum=document.getElementById('mp1').value.trim();
+  if(!poNum){alert('PO number required');return;}
+  const obj={
+    id:id||'PO'+Date.now(),poNum,
+    article:document.getElementById('mp2').value.trim(),
+    description:document.getElementById('mp3').value.trim(),
+    qty:parseInt(document.getElementById('mp4').value)||0,
+    mrp:document.getElementById('mp5').value.trim(),
+    price:document.getElementById('mp6').value.trim(),
+    deliveryDate:document.getElementById('mp7').value,
+    apptDate:document.getElementById('mp8').value,
+    extDate:document.getElementById('mp9').value,
+    site:document.getElementById('mp10').value,
+    supplierId:document.getElementById('mp11').value,
+    delayReason:document.getElementById('mp12').value.trim()
+  };
+  if(id){const i=S.pos.findIndex(p=>p.id===id);if(i>=0)S.pos[i]=obj;}
+  else S.pos.push(obj);
+  applySkuMapping();cm('mPO');refreshAll();showToast(id?'✅ PO updated':'✅ PO added');
+}
+
+function deletePO(id){
+  S.pos=S.pos.filter(p=>p.id!==id);
+  cm('mPO');refreshAll();showToast('🗑 PO deleted');
+}
+
+function openSupModal(id){
+  const sup=id?S.suppliers.find(s=>s.id===id):null;
+  document.getElementById('mSupt').textContent=sup?'Edit Supplier':'Add Supplier';
+  const swatches=COLORS.map(c=>`<div onclick="this.parentNode.querySelectorAll('.csw').forEach(x=>x.style.outline='none');this.style.outline='2px solid #fff';this._sel=true;document.getElementById('supColor').value='${c}'" class="csw" style="width:20px;height:20px;border-radius:50%;background:${c};cursor:pointer;display:inline-block;margin:3px;outline:${(sup?.color||COLORS[0])===c?'2px solid #fff':'none'}"></div>`).join('');
+  document.getElementById('mSupb').innerHTML=`
+    <input type="hidden" id="supColor" value="${sup?.color||COLORS[0]}">
+    <div style="margin-bottom:10px">${swatches}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px">
+      <div><label style="font-size:11px;color:var(--muted)">Supplier Name *</label><input id="ss1" value="${sup?.name||''}" style="width:100%;margin-top:3px"></div>
+      <div><label style="font-size:11px;color:var(--muted)">City</label><input id="ss2" value="${sup?.city||''}" style="width:100%;margin-top:3px"></div>
+    </div>
+    <div style="margin-bottom:9px"><label style="font-size:11px;color:var(--muted)">Address</label><input id="ss7" value="${sup?.address||''}" style="width:100%;margin-top:3px"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px">
+      <div><label style="font-size:11px;color:var(--muted)">Phone</label><input id="ss3" value="${sup?.phone||''}" style="width:100%;margin-top:3px"></div>
+      <div><label style="font-size:11px;color:var(--muted)">Email</label><input id="ss4" value="${sup?.email||''}" style="width:100%;margin-top:3px"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn btn-p" onclick="saveSup('${id||''}')">Save Supplier</button>
+      <button class="btn btn-s" onclick="cm('mSup')">Cancel</button>
+      ${id?`<button class="btn" style="background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.3)" onclick="deleteSup('${id}')">Delete</button>`:''}
+    </div>`;
+  document.getElementById('mSup').classList.remove('hidden');
+}
+
+function saveSup(id){
+  const name=document.getElementById('ss1').value.trim();
+  if(!name){alert('Name required');return;}
+  const color=document.getElementById('supColor').value||COLORS[S.suppliers.length%COLORS.length];
+  const obj={id:id||'SUP'+Date.now(),name,color,
+    city:document.getElementById('ss2').value.trim(),
+    address:document.getElementById('ss7').value.trim(),
+    phone:document.getElementById('ss3').value.trim(),
+    email:document.getElementById('ss4').value.trim()};
+  if(id){const i=S.suppliers.findIndex(s=>s.id===id);if(i>=0)S.suppliers[i]=obj;}
+  else S.suppliers.push(obj);
+  cm('mSup');refreshAll();showToast(id?'✅ Supplier updated':'✅ Supplier added');
+}
+
+function deleteSup(id){
+  S.suppliers=S.suppliers.filter(s=>s.id!==id);
+  S.pos.forEach(p=>{if(p.supplierId===id)p.supplierId='';});
+  cm('mSup');refreshAll();showToast('🗑 Supplier deleted');
+}
+
+function openWHModal(id){
+  const w=id?S.warehouses.find(x=>x.id===id):null;
+  document.getElementById('mWHt').textContent=w?'Edit Warehouse':'Add Warehouse';
+  document.getElementById('mWHb').innerHTML=`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px">
+      <div><label style="font-size:11px;color:var(--muted)">Warehouse Name *</label><input id="wh1" value="${w?.name||''}" style="width:100%;margin-top:3px"></div>
+      <div><label style="font-size:11px;color:var(--muted)">Site Code *</label><input id="wh2" value="${w?.code||''}" placeholder="e.g. 1033" style="width:100%;margin-top:3px"></div>
+    </div>
+    <div style="margin-bottom:9px"><label style="font-size:11px;color:var(--muted)">Address</label><input id="wh3" value="${w?.address||''}" style="width:100%;margin-top:3px"></div>
+    <div style="margin-bottom:9px"><label style="font-size:11px;color:var(--muted)">Receiving Email</label><input id="wh4" value="${w?.email||''}" placeholder="receiving.xxx@dmartindia.com" style="width:100%;margin-top:3px"></div>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn btn-p" onclick="saveWH('${id||''}')">Save Warehouse</button>
+      <button class="btn btn-s" onclick="cm('mWH')">Cancel</button>
+      ${id?`<button class="btn" style="background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.3)" onclick="deleteWH('${id}')">Delete</button>`:''}
+    </div>`;
+  document.getElementById('mWH').classList.remove('hidden');
+}
+
+function saveWH(id){
+  const name=document.getElementById('wh1').value.trim();
+  const code=document.getElementById('wh2').value.trim();
+  if(!name||!code){alert('Name and site code required');return;}
+  const obj={id:id||'WH'+Date.now(),name,code,
+    address:document.getElementById('wh3').value.trim(),
+    email:document.getElementById('wh4').value.trim()};
+  if(id){const i=S.warehouses.findIndex(w=>w.id===id);if(i>=0)S.warehouses[i]=obj;}
+  else S.warehouses.push(obj);
+  cm('mWH');refreshAll();showToast(id?'✅ Warehouse updated':'✅ Warehouse added');
+}
+
+function deleteWH(id){
+  S.warehouses=S.warehouses.filter(w=>w.id!==id);
+  cm('mWH');refreshAll();showToast('🗑 Warehouse deleted');
+}
+
+function openTrModal(id){
+  const t=id?S.transporters.find(x=>x.id===id):null;
+  document.getElementById('mTRt').textContent=t?'Edit Transporter':'Add Transporter';
+  document.getElementById('mTRb').innerHTML=`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px">
+      <div><label style="font-size:11px;color:var(--muted)">Transporter Name *</label><input id="tr1" value="${t?.name||''}" style="width:100%;margin-top:3px"></div>
+      <div><label style="font-size:11px;color:var(--muted)">Phone</label><input id="tr2" value="${t?.phone||''}" style="width:100%;margin-top:3px"></div>
+    </div>
+    <div style="margin-bottom:9px"><label style="font-size:11px;color:var(--muted)">Vehicle Type</label><input id="tr3" value="${t?.vehicle||''}" placeholder="e.g. 20ft Container" style="width:100%;margin-top:3px"></div>
+    <div style="margin-bottom:9px"><label style="font-size:11px;color:var(--muted)">Notes</label><input id="tr4" value="${t?.notes||''}" style="width:100%;margin-top:3px"></div>
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn btn-p" onclick="saveTr('${id||''}')">Save Transporter</button>
+      <button class="btn btn-s" onclick="cm('mTR')">Cancel</button>
+      ${id?`<button class="btn" style="background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.3)" onclick="deleteTr('${id}')">Delete</button>`:''}
+    </div>
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Warehouse → Transporter Assignments</div>
+      ${S.warehouses.map(w=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <span style="font-size:11px;min-width:120px">${w.name||w.code} (${w.code})</span>
+        <select onchange="S.whTransporterMap['${w.code}']=this.value;saveToStorage()" style="flex:1;font-size:11px">
+          <option value="">— None —</option>
+          ${S.transporters.map(tr=>`<option value="${tr.id}" ${S.whTransporterMap[w.code]===tr.id?'selected':''}>${tr.name}</option>`).join('')}
+          ${t&&!S.transporters.find(x=>x.id===t?.id)?`<option value="${t?.id}" selected>${t?.name} (current)</option>`:''}
+        </select>
+      </div>`).join('')}
+    </div>`;
+  document.getElementById('mTR').classList.remove('hidden');
+}
+
+function saveTr(id){
+  const name=document.getElementById('tr1').value.trim();
+  if(!name){alert('Name required');return;}
+  const obj={id:id||'TR'+Date.now(),name,
+    phone:document.getElementById('tr2').value.trim(),
+    vehicle:document.getElementById('tr3').value.trim(),
+    notes:document.getElementById('tr4').value.trim()};
+  if(id){const i=S.transporters.findIndex(t=>t.id===id);if(i>=0)S.transporters[i]=obj;}
+  else S.transporters.push(obj);
+  cm('mTR');refreshAll();showToast(id?'✅ Transporter updated':'✅ Transporter added');
+}
+
+function deleteTr(id){
+  S.transporters=S.transporters.filter(t=>t.id!==id);
+  Object.keys(S.whTransporterMap).forEach(k=>{if(S.whTransporterMap[k]===id)delete S.whTransporterMap[k];});
+  cm('mTR');refreshAll();showToast('🗑 Transporter deleted');
+}
+
+function openAssignModal(){
+  if(!S.suppliers.length){
+    if(confirm('No suppliers added yet. Add a supplier first?'))openSupModal(null);
+    return;
+  }
+  const unmap=getUnmappedSKUs();
+  if(unmap.length>0)openSkuMapModal(unmap);
+  else openSkuMapModal([...new Set(S.pos.map(p=>p.article||'?'))]);
+}
+
+
+function renderPOList(){
+  const el=document.getElementById('poListEl');if(!el)return;
+  const q=(document.getElementById('poSearch')?.value||'').toLowerCase();
+  const list=S.pos.filter(p=>!q||p.poNum.includes(q)||p.description.toLowerCase().includes(q)||(p.article||'').includes(q));
+  if(!list.length){el.innerHTML='<p style="color:var(--muted);font-size:11px;padding:8px 0">'+(q?'No POs match search.':'No POs added yet.')+'</p>';return;}
+  el.innerHTML=list.map(p=>{
+    const sup=S.suppliers.find(s=>s.id===p.supplierId);
+    const delayed=isDelayed(p);
+    return `<div class="poi">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:5px">
+          <span class="poi-id">${p.poNum}</span>
+          ${delayed?'<span style="font-size:9px;color:var(--red);background:rgba(239,68,68,.1);border-radius:3px;padding:1px 4px">DELAYED</span>':''}
+        </div>
+        <div class="poi-desc">${p.description||'—'}</div>
+        <div class="poi-meta">
+          <span class="badge t">${p.qty.toLocaleString('en-IN')} pcs</span>
+          ${p.site?`<span class="badge t">Site ${p.site}</span>`:''}
+          ${sup?`<span class="badge" style="background:${sup.color}22;color:${sup.color};border-color:${sup.color}44">${sup.name}</span>`:'<span class="badge t" style="color:var(--muted)">Unassigned</span>'}
+        </div>
+      </div>
+      <button class="poi-rm" onclick="openPOModal('${p.id}',{})">✎</button>
+    </div>`;
+  }).join('');
+}
+
+function renderWHList(){
+  const el=document.getElementById('whListEl');if(!el)return;
+  if(!S.warehouses.length){el.innerHTML='<p style="color:var(--muted);font-size:11px">No warehouses added yet.</p>';return;}
+  el.innerHTML=S.warehouses.map(w=>{
+    const trId=S.whTransporterMap[w.code];
+    const tr=S.transporters.find(t=>t.id===trId);
+    const pos=S.pos.filter(p=>p.site===w.code);
+    return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:9px 10px;margin-bottom:6px">
+      <div style="font-size:12px;font-weight:600">${w.name||w.code}</div>
+      <div style="font-size:10px;font-family:var(--font-m);color:var(--accent)">Site ${w.code}</div>
+      ${w.address?`<div style="font-size:10px;color:var(--muted)">📍 ${w.address}</div>`:''}
+      ${w.email?`<div style="font-size:10px;color:var(--muted)">✉️ ${w.email}</div>`:''}
+      <div style="font-size:10px;margin-top:3px">${pos.length} POs · Transporter: ${tr?`<span style="color:var(--teal)">${tr.name}</span>`:'<span style="color:var(--muted)">None</span>'}</div>
+      <div style="margin-top:5px;display:flex;gap:5px">
+        <button class="btn btn-xs btn-s" onclick="openWHModal('${w.id}')">Edit</button>
+        <button class="btn btn-xs" style="background:rgba(239,68,68,.12);color:var(--red);border:1px solid rgba(239,68,68,.2)" onclick="deleteWH('${w.id}')">Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderAI(){
+  const el=document.getElementById('view-ai');if(!el)return;
+  if(el.querySelector('#aiMsgs'))return;
+  el.innerHTML=`<div style="display:flex;flex-direction:column;height:100%;padding:0">
+    <div id="aiMsgs" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:4px"></div>
+    <div style="border-top:1px solid var(--border);padding:12px;display:flex;gap:8px">
+      <input id="aiIn" placeholder="Ask about your POs, delays, suppliers…" style="flex:1" onkeydown="if(event.key==='Enter')sendAI()">
+      <button class="btn btn-p" onclick="sendAI()">Send</button>
+    </div>
+  </div>`;
+  const msgs=el.querySelector('#aiMsgs');
+  msgs.innerHTML=`<div style="text-align:center;padding:20px;color:var(--muted)">
+    <div style="font-size:24px;margin-bottom:8px">🤖</div>
+    <div style="font-size:12px">Ask me anything about your dispatch plan</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:12px">
+      ${['Which POs are delayed?','Summarise this week dispatches','Which supplier has most POs?','What is the total quantity?'].map(q=>`<button class="btn btn-s btn-sm" onclick="openAIChat('${q}')" style="font-size:10px">${q}</button>`).join('')}
+    </div>
+  </div>`;
+}
+
+function openWHTrMapModal(){
+  if(!S.transporters.length){
+    if(confirm('No transporters added. Add one first?'))openTrModal(null);
+    return;
+  }
+  document.getElementById('mWHTRb').innerHTML=`
+    <p style="font-size:11px;color:var(--muted);margin-bottom:12px">Assign a transporter to each warehouse route.</p>
+    ${S.warehouses.map(w=>`<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+      <span style="font-size:12px;min-width:140px;font-weight:500">${w.name||w.code} <span style="font-family:var(--font-m);font-size:10px;color:var(--muted)">(${w.code})</span></span>
+      <select id="wtr_${w.code}" style="flex:1">
+        <option value="">— None —</option>
+        ${S.transporters.map(t=>`<option value="${t.id}" ${S.whTransporterMap[w.code]===t.id?'selected':''}>${t.name}</option>`).join('')}
+      </select>
+    </div>`).join('')}
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn btn-p" onclick="saveWHTrMap()">Save Assignments</button>
+      <button class="btn btn-s" onclick="cm('mWHTR')">Cancel</button>
+    </div>`;
+  document.getElementById('mWHTR').classList.remove('hidden');
+}
+
+function saveWHTrMap(){
+  S.warehouses.forEach(w=>{
+    const val=document.getElementById('wtr_'+w.code)?.value;
+    if(val)S.whTransporterMap[w.code]=val;
+    else delete S.whTransporterMap[w.code];
+  });
+  cm('mWHTR');refreshAll();showToast('✅ Transporter assignments saved');
+}
+
+function updReason(id,val){
+  const po=S.pos.find(p=>p.id===id);
+  if(po){po.delayReason=val;saveToStorage();}
+}
+
+
+// ==================== LR / GRN TAB ====================
+function renderLR(){
+  const el=document.getElementById('view-lr');if(!el)return;
+
+  // Summary counts
+  const total=S.lrRecords.length;
+  const withGRN=S.lrRecords.filter(r=>r.grnDate).length;
+  const pending=S.pos.filter(p=>(p.apptDate||p.extDate)&&!S.lrRecords.find(r=>r.poId===p.id)).length;
+  const lrDelayed=S.lrRecords.filter(r=>{
+    const po=S.pos.find(p=>p.id===r.poId);
+    if(!po||!r.grnDate)return false;
+    const del=pd(po.deliveryDate);const grn=pd(r.grnDate);
+    return del&&grn&&grn>del;
+  }).length;
+
+  // Summary cards HTML
+  const summaryCards=[
+    ['📋','Total LR','Entries',total,'var(--accent)'],
+    ['✅','GRN','Received',withGRN,'var(--green)'],
+    ['⏳','Awaiting','GRN',total-withGRN,'var(--orange)'],
+    ['🔴','Late','Deliveries',lrDelayed,'var(--red)'],
+    ['📦','POs Needing','LR Entry',pending,'var(--purple)'],
+  ].map(function(x){
+    return '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;text-align:center">'
+      +'<div style="font-size:18px">'+x[0]+'</div>'
+      +'<div style="font-size:20px;font-weight:700;color:'+x[4]+';font-family:var(--font-d)">'+x[3]+'</div>'
+      +'<div style="font-size:10px;color:var(--muted)">'+x[1]+'<br>'+x[2]+'</div>'
+      +'</div>';
+  }).join('');
+
+  // Missing LR banner
+  const need=S.pos.filter(p=>(p.apptDate||p.extDate)&&!S.lrRecords.find(r=>r.poId===p.id));
+  const missingBtns=need.map(function(p){
+    var btn=document.createElement('button');
+    btn.className='btn btn-sm';
+    btn.style.cssText='background:rgba(168,85,247,.12);color:var(--purple);border:1px solid rgba(168,85,247,.3);font-size:10px';
+    btn.textContent=p.poNum+' →';
+    btn.dataset.poId=p.id;
+    btn.onclick=function(){openLRModal(this.dataset.poId,'');};
+    return btn.outerHTML;
+  }).join('');
+  const missingBanner=need.length
+    ? '<div style="background:rgba(168,85,247,.06);border:1px solid rgba(168,85,247,.2);border-radius:8px;padding:12px 14px;margin-bottom:16px">'
+      +'<div style="font-size:12px;font-weight:600;color:var(--purple);margin-bottom:8px">📌 '+need.length+' PO(s) scheduled for delivery but missing LR entry</div>'
+      +'<div style="display:flex;flex-wrap:wrap;gap:6px">'+missingBtns+'</div></div>'
+    : '';
+
+  // Table rows — built as plain string concatenation, no nested template literals
+  var tableRows='';
+  S.lrRecords.forEach(function(r){
+    var po=S.pos.find(function(p){return p.id===r.poId;})||{};
+    var tr=S.transporters.find(function(t){return t.id===r.transporterId;});
+    var trName=r.transporterName||(tr?tr.name:'—');
+    var delivDue=pd(po.deliveryDate);
+    var grnD=pd(r.grnDate);
+    var dispD=pd(r.dispatchDate);
+    var ddln=po.deliveryDate?dispatchDeadline(po):null;
+    var grnStatus='';var grnColor='var(--muted)';
+    if(grnD&&delivDue){
+      var diff=Math.round((grnD.getTime()-delivDue.getTime())/864e5);
+      if(diff<=0){grnStatus='✅ On Time';grnColor='var(--green)';}
+      else if(diff<=5){grnStatus='⚠️ Grace +'+diff+'d';grnColor='var(--orange)';}
+      else{grnStatus='🔴 Late +'+diff+'d';grnColor='var(--red)';}
+    }else if(!r.grnDate){grnStatus='⏳ Awaiting';grnColor='var(--muted)';}
+    var dispStatus='';
+    if(dispD&&ddln){dispStatus=dispD<=ddln?'':'⚠️ Late dispatch';}
+    tableRows+='<tr style="border-bottom:1px solid var(--border)">'
+      +'<td style="padding:8px 10px;font-family:var(--font-m);color:var(--accent);white-space:nowrap">'+(po.poNum||r.poId)+'</td>'
+      +'<td style="padding:8px 10px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(po.description||'—')+'</td>'
+      +'<td style="padding:8px 10px;font-family:var(--font-m);white-space:nowrap">'+(r.lrNumber||'—')+'</td>'
+      +'<td style="padding:8px 10px;white-space:nowrap">'+trName+'</td>'
+      +'<td style="padding:8px 10px;white-space:nowrap">'+(fd(r.dispatchDate)||'—')+'<br><span style="font-size:9px;color:'+(dispStatus?'var(--orange)':'var(--muted)')+'">'+( dispStatus||('Due: '+fd(ddln)))+'</span></td>'
+      +'<td style="padding:8px 10px;white-space:nowrap">'+(r.grnDate?fd(r.grnDate):'<span style="color:var(--muted);font-style:italic">Pending</span>')+'</td>'
+      +'<td style="padding:8px 10px;white-space:nowrap;font-weight:600;color:'+grnColor+'">'+grnStatus+'</td>'
+      +'<td style="padding:8px 10px;max-width:180px;color:var(--muted)">'+(r.delayReason||'—')+'</td>'
+      +'<td style="padding:8px 10px;white-space:nowrap">'
+        +'<button class="btn btn-xs btn-s" data-lr-id="'+r.id+'" onclick="openLRModal(\'\',this.getAttribute(\'data-lr-id\'))">Edit</button> '
+        +'<button class="btn btn-xs" style="background:rgba(239,68,68,.12);color:var(--red);border:1px solid rgba(239,68,68,.2)" data-lr-id="'+r.id+'" onclick="deleteLR(this.getAttribute(\'data-lr-id\'))">✕</button>'
+      +'</td>'
+      +'</tr>';
+  });
+
+  var tableHTML=S.lrRecords.length===0
+    ? '<div style="text-align:center;padding:40px;color:var(--muted)"><div style="font-size:32px;margin-bottom:10px">📋</div><div>No LR records yet.</div></div>'
+    : '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">'
+      +'<thead><tr style="border-bottom:2px solid var(--border)">'
+      +'<th style="text-align:left;padding:8px 10px;color:var(--muted)">PO #</th>'
+      +'<th style="text-align:left;padding:8px 10px;color:var(--muted)">Description</th>'
+      +'<th style="text-align:left;padding:8px 10px;color:var(--muted)">LR Number</th>'
+      +'<th style="text-align:left;padding:8px 10px;color:var(--muted)">Transporter</th>'
+      +'<th style="text-align:left;padding:8px 10px;color:var(--muted)">Dispatch Date</th>'
+      +'<th style="text-align:left;padding:8px 10px;color:var(--muted)">GRN Date</th>'
+      +'<th style="text-align:left;padding:8px 10px;color:var(--muted)">Status</th>'
+      +'<th style="text-align:left;padding:8px 10px;color:var(--muted)">Delay Reason</th>'
+      +'<th style="padding:8px 10px"></th>'
+      +'</tr></thead>'
+      +'<tbody>'+tableRows+'</tbody></table></div>';
+
+  el.innerHTML=''
+    +'<div style="padding:20px;max-width:1100px">'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:10px">'
+    +'<div style="font-family:var(--font-d);font-size:22px;color:var(--accent)">📋 LR / GRN Records</div>'
+    +'<div style="display:flex;gap:6px;align-items:center">'
+    +'<button class="btn btn-p" onclick="openLRModal(null,\'\')">+ Add LR Entry</button>'
+    +'</div>'
+    +'</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:18px">'+summaryCards+'</div>'
+    +missingBanner
+    +tableHTML
+    +'</div>';
+}
+
+function openLRModal(poId, lrId){
+  if(poId==='null')poId=''; // guard against string null from onclick
+  const lr=lrId?S.lrRecords.find(r=>r.id===lrId):null;
+  const deleteBtn=lrId?('<button class="btn" style="background:rgba(239,68,68,.15);color:var(--red);border:1px solid rgba(239,68,68,.3)" onclick="deleteLR(this.dataset.id)" data-id="'+lrId+'">Delete</button>'):'';
+  const preselPo=poId||lr?.poId||'';
+
+  // Build PO options
+  const poOpts=S.pos.map(p=>`<option value="${p.id}" ${(preselPo===p.id)?'selected':''}>${p.poNum} — ${p.description} (${fd(p.deliveryDate)})</option>`).join('');
+  // Transporter options
+  const trOpts=`<option value="">— Manual entry —</option>`+S.transporters.map(t=>`<option value="${t.id}" ${lr?.transporterId===t.id?'selected':''}>${t.name}</option>`).join('');
+
+  document.getElementById('mLRt').textContent=lr?'Edit LR Entry':'Add LR Entry';
+  document.getElementById('mLRb').innerHTML=`
+    <div style="margin-bottom:10px">
+      <label style="font-size:11px;color:var(--muted)">PO *</label>
+      <select id="lr_po" style="width:100%;margin-top:3px" onchange="lrPoChange()">${poOpts}</select>
+    </div>
+    <div id="lr_po_info" style="margin-bottom:10px"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:10px">
+      <div>
+        <label style="font-size:11px;color:var(--muted)">LR Number *</label>
+        <input id="lr_num" value="${lr?.lrNumber||''}" placeholder="e.g. MH01234567" style="width:100%;margin-top:3px">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted)">Dispatch Date (when goods left supplier)</label>
+        <input id="lr_disp" type="date" value="${lr?.dispatchDate||''}" style="width:100%;margin-top:3px" onchange="lrPoChange()">
+      </div>
+    </div>
+    <div style="margin-bottom:10px">
+      <label style="font-size:11px;color:var(--muted)">Transporter</label>
+      <select id="lr_tr" style="width:100%;margin-top:3px" onchange="lrTrChange()">${trOpts}</select>
+    </div>
+    <div style="margin-bottom:10px">
+      <label style="font-size:11px;color:var(--muted)">Transporter Name (if not in list)</label>
+      <input id="lr_tr_name" value="${lr?.transporterName||''}" placeholder="Enter name if not in dropdown" style="width:100%;margin-top:3px">
+    </div>
+    <div style="margin-bottom:10px">
+      <label style="font-size:11px;color:var(--muted)">GRN Date (when warehouse received goods) — leave blank if not yet received</label>
+      <input id="lr_grn" type="date" value="${lr?.grnDate||''}" style="width:100%;margin-top:3px" onchange="lrPoChange()">
+    </div>
+    <div id="lr_status_bar" style="margin-bottom:10px"></div>
+    <div style="margin-bottom:13px">
+      <label style="font-size:11px;color:var(--muted)">Delay Reason (required if GRN date is after delivery date)</label>
+      <input id="lr_reason" value="${lr?.delayReason||''}" placeholder="e.g. Vehicle breakdown, traffic, warehouse queue…" style="width:100%;margin-top:3px">
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-p" onclick="saveLR('${lrId||''}')">Save LR Entry</button>
+      <button class="btn btn-s" onclick="cm('mLR')">Cancel</button>
+      ${deleteBtn}
+    </div>`;
+  document.getElementById('mLR').classList.remove('hidden');
+  setTimeout(lrPoChange, 60);
+}
+
+function lrTrChange(){
+  const sel=document.getElementById('lr_tr');
+  const tr=S.transporters.find(t=>t.id===sel.value);
+  if(tr){
+    const nameEl=document.getElementById('lr_tr_name');
+    if(nameEl&&!nameEl.value)nameEl.value=tr.name;
+  }
+}
+
+function lrPoChange(){
+  const poId=document.getElementById('lr_po')?.value;
+  const grnDate=document.getElementById('lr_grn')?.value;
+  const dispDate=document.getElementById('lr_disp')?.value;
+  const infoEl=document.getElementById('lr_po_info');
+  const statusEl=document.getElementById('lr_status_bar');
+  if(!poId){if(infoEl)infoEl.innerHTML='';return;}
+  const po=S.pos.find(p=>p.id===poId);
+  if(!po){if(infoEl)infoEl.innerHTML='';return;}
+
+  const ddln=dispatchDeadline(po);
+  const dispD=pd(dispDate);
+  const grnD=pd(grnDate);
+  const delivDue=pd(po.deliveryDate);
+
+  // PO info strip
+  if(infoEl){
+    const sup=S.suppliers.find(s=>s.id===po.supplierId);
+    infoEl.innerHTML=`<div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:10px;display:flex;gap:14px;flex-wrap:wrap">
+      <span>📅 Delivery: <strong>${fd(po.deliveryDate)}</strong></span>
+      <span>📤 Must dispatch by: <strong style="color:var(--accent)">${fd(ddln)}</strong></span>
+      <span>📦 Qty: <strong>${(po.qty||0).toLocaleString('en-IN')} pcs</strong></span>
+      ${sup?`<span>🏭 Supplier: <strong>${sup.name}</strong></span>`:''}
+    </div>`;
+  }
+
+  // Status bar
+  if(statusEl){
+    let bars=[];
+    if(dispD&&ddln){
+      const diff=Math.round((dispD.getTime()-ddln.getTime())/864e5);
+      if(diff<=0) bars.push(`<span style="background:rgba(34,197,94,.12);color:var(--green);border:1px solid rgba(34,197,94,.3);padding:3px 8px;border-radius:5px;font-size:10px">✅ Dispatched on time</span>`);
+      else bars.push(`<span style="background:rgba(239,68,68,.12);color:var(--red);border:1px solid rgba(239,68,68,.3);padding:3px 8px;border-radius:5px;font-size:10px">⚠️ Dispatch was ${diff} day${diff===1?'':'s'} late (deadline: ${fd(ddln)})</span>`);
+    }
+    if(grnD&&delivDue){
+      const diff=Math.round((grnD.getTime()-delivDue.getTime())/864e5);
+      if(diff<=0) bars.push(`<span style="background:rgba(34,197,94,.12);color:var(--green);border:1px solid rgba(34,197,94,.3);padding:3px 8px;border-radius:5px;font-size:10px">✅ GRN received on time</span>`);
+      else if(diff<=5) bars.push(`<span style="background:rgba(249,115,22,.12);color:var(--orange);border:1px solid rgba(249,115,22,.3);padding:3px 8px;border-radius:5px;font-size:10px">⚠️ GRN in grace (+${diff} day${diff===1?'':'s'}) — reason required</span>`);
+      else bars.push(`<span style="background:rgba(239,68,68,.12);color:var(--red);border:1px solid rgba(239,68,68,.3);padding:3px 8px;border-radius:5px;font-size:10px">🔴 GRN late by ${diff} days — formal delay</span>`);
+    }
+    statusEl.innerHTML=bars.length?`<div style="display:flex;flex-wrap:wrap;gap:6px">${bars.join('')}</div>`:'';
+  }
+}
+
+function saveLR(id){
+  const poId=document.getElementById('lr_po').value;
+  const lrNumber=document.getElementById('lr_num').value.trim();
+  if(!poId){alert('Please select a PO');return;}
+  if(!lrNumber){alert('LR Number is required');return;}
+  const trSel=document.getElementById('lr_tr').value;
+  const trName=document.getElementById('lr_tr_name').value.trim();
+  const grnDate=document.getElementById('lr_grn').value;
+  const dispDate=document.getElementById('lr_disp').value;
+  const reason=document.getElementById('lr_reason').value.trim();
+
+  // If GRN date is after delivery and no reason, warn
+  const po=S.pos.find(p=>p.id===poId);
+  if(po&&grnDate){
+    const del=pd(po.deliveryDate);const grn=pd(grnDate);
+    if(del&&grn&&grn>del&&!reason){
+      alert('GRN date is after delivery date — please provide a delay reason.');
+      document.getElementById('lr_reason').focus();
+      return;
+    }
+  }
+
+  const obj={
+    id:id||'LR'+Date.now(),
+    poId,lrNumber,
+    transporterId:trSel,
+    transporterName:trName,
+    dispatchDate:dispDate,
+    grnDate,
+    delayReason:reason
+  };
+  if(id){const i=S.lrRecords.findIndex(r=>r.id===id);if(i>=0)S.lrRecords[i]=obj;}
+  else S.lrRecords.push(obj);
+  cm('mLR');saveToStorage();renderLR();
+  showToast(id?'✅ LR record updated':'✅ LR entry saved');
+}
+
+function deleteLR(id){
+  if(!id){console.error('deleteLR: no id passed');return;}
+  S.lrRecords=S.lrRecords.filter(r=>r.id!==id);
+  cm('mLR');saveToStorage();renderLR();showToast('🗑 LR record deleted');
+}
+
+
 // ==================== AI ENGINE ====================
 const AI_MODEL='claude-sonnet-4-20250514';
 const AI_API='https://super-haze-a51c.short-shops.workers.dev/';
+
+// ==================== API CONFIG ====================
+const API_BASE = 'https://electro-backend-divk.onrender.com/api';
+
+function getToken(){ return sessionStorage.getItem('ea_token'); }
+function setToken(t){ sessionStorage.setItem('ea_token', t); }
+
+async function api(method, path, body){
+  const opts = {
+    method,
+    headers: { 'Content-Type': 'application/json' }
+  };
+  const token = getToken();
+  if(token) opts.headers['Authorization'] = 'Bearer ' + token;
+  if(body) opts.body = JSON.stringify(body);
+  const r = await fetch(API_BASE + path, opts);
+  if(!r.ok){ const e=await r.json().catch(()=>({})); throw new Error(e.error||r.statusText); }
+  return r.json();
+}
 
 async function aiPost(bodyObj){
   const resp=await fetch(AI_API,{
@@ -1195,7 +1910,7 @@ let briefingLoaded=false;
 async function loadDailyBriefing(){
   const card=document.getElementById('aiBriefingCard');
   if(!card||!S.pos.length)return;
-  // Show loading state
+  briefingLoaded=true;
   const today=new Date().toLocaleDateString('en-IN',{weekday:'long',day:'2-digit',month:'long'});
   card.innerHTML=`<div class="ai-briefing">
     <div class="ai-briefing-header">
@@ -1203,803 +1918,167 @@ async function loadDailyBriefing(){
       <div><div class="ai-briefing-title">GOOD MORNING — ${today.toUpperCase()}</div>
       <div class="ai-briefing-sub">Generating your daily briefing…</div></div>
     </div>
-    <div class="ai-loading"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span><span style="margin-left:4px">Analysing your dispatch plan…</span></div>
   </div>`;
   try{
-    const ctx=buildAIContext();
-    const today2=new Date().toISOString().split('T')[0];
+    const delayed=S.pos.filter(p=>isDelayed(p));
+    const unassigned=S.pos.filter(p=>!p.supplierId);
+    const totalQty=S.pos.reduce((a,p)=>a+p.qty,0);
     const text=await callAI(
-      `You are a sharp dispatch planning assistant for Electro Apparels, a garment middleman. Give a morning briefing in clean HTML using ONLY <div>, <strong>, <span>, <br> tags. No markdown. Be specific with PO numbers and dates. Use emojis for visual clarity. Max 200 words.`,
-      `Today is ${today2}. Here is the full data:\n${ctx}\n\nGive a morning briefing with: (1) Top 2-3 urgent actions needed TODAY, (2) Any POs at risk of missing deadline based on delivery dates, (3) One positive thing if any. Format as 3-4 short punchy bullet points. Each bullet on its own line starting with an emoji.`
-    ,600);
+      'You are a dispatch planning assistant for Electro Apparels, a garment middleman supplying DMart. Give a concise daily briefing in plain HTML using only <div><strong><span><br><ul><li> tags. Use emojis. Be direct and actionable.',
+      `Today's dispatch data: ${S.pos.length} POs total, ${totalQty.toLocaleString('en-IN')} pieces, ${delayed.length} delayed, ${unassigned.length} unassigned to supplier, ${S.suppliers.length} suppliers. Delayed POs: ${delayed.slice(0,3).map(p=>p.poNum+' ('+p.description+', '+p.qty+' pcs)').join('; ')}. Give 3 specific actions needed today.`
+    );
     card.innerHTML=`<div class="ai-briefing">
       <div class="ai-briefing-header">
         <div class="ai-briefing-icon">🌅</div>
         <div><div class="ai-briefing-title">GOOD MORNING — ${today.toUpperCase()}</div>
-        <div class="ai-briefing-sub">AI daily briefing · ${new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</div></div>
-        <button class="btn btn-s btn-xs" style="margin-left:auto" onclick="briefingLoaded=false;loadDailyBriefing()">↻</button>
+        <div class="ai-briefing-sub">AI Daily Briefing</div></div>
+        <button class="btn btn-s btn-xs" style="margin-left:auto;font-size:10px" onclick="briefingLoaded=false;loadDailyBriefing()">↻ Refresh</button>
       </div>
-      <div style="font-size:12.5px;line-height:1.8">${text}</div>
+      <div class="ai-briefing-body" style="margin-top:10px;font-size:12px;line-height:1.6">${text}</div>
     </div>`;
   }catch(e){
-    card.innerHTML=`<div class="ai-briefing" style="border-color:rgba(239,68,68,.2)">
-      <div style="font-size:11px;color:var(--muted)">⚠️ Could not load AI briefing. Check your connection. <button class="btn btn-xs btn-s" onclick="loadDailyBriefing()">Retry</button></div>
-    </div>`;
-  }
-}
-
-// ==================== AI INSIGHTS TAB ====================
-let aiInsightTab='briefing';
-function renderAI(){
-  const el=document.getElementById('view-ai');
-  el.innerHTML=`
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-      <div>
-        <div style="font-family:var(--font-d);font-size:28px;letter-spacing:1px">AI INSIGHTS</div>
-        <div style="font-size:11px;color:var(--muted)">Predictions, scoring, message drafts and freeform analysis</div>
-      </div>
-    </div>
-    <div class="ai-tab-row">
-      <button class="ai-tab-btn ${aiInsightTab==='briefing'?'active':''}" onclick="switchAITab('briefing',this)">🌅 Daily Briefing</button>
-      <button class="ai-tab-btn ${aiInsightTab==='predict'?'active':''}" onclick="switchAITab('predict',this)">📡 Delay Predictions</button>
-      <button class="ai-tab-btn ${aiInsightTab==='score'?'active':''}" onclick="switchAITab('score',this)">🏆 Supplier Scoring</button>
-      <button class="ai-tab-btn ${aiInsightTab==='message'?'active':''}" onclick="switchAITab('message',this)">✉️ Message Drafts</button>
-      <button class="ai-tab-btn ${aiInsightTab==='chat'?'active':''}" onclick="switchAITab('chat',this)">💬 Chat</button>
-    </div>
-    <div id="aiTabContent"></div>`;
-  renderAITab(aiInsightTab);
-}
-
-function switchAITab(t,el){
-  aiInsightTab=t;
-  document.querySelectorAll('.ai-tab-btn').forEach(b=>b.classList.remove('active'));
-  if(el)el.classList.add('active');
-  renderAITab(t);
-}
-
-function renderAITab(t){
-  const c=document.getElementById('aiTabContent');
-  if(t==='briefing') renderAIBriefingTab(c);
-  else if(t==='predict') renderAIPredictTab(c);
-  else if(t==='score') renderAIScoreTab(c);
-  else if(t==='message') renderAIMessageTab(c);
-  else if(t==='chat') renderAIChatTab(c);
-}
-
-// ----- BRIEFING TAB -----
-function renderAIBriefingTab(c){
-  c.innerHTML=`<div id="aiBriefingFull">
-    <div class="ai-loading"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span><span style="margin-left:6px">Loading briefing…</span></div>
-  </div>`;
-  runFullBriefing();
-}
-async function runFullBriefing(){
-  const c=document.getElementById('aiBriefingFull');if(!c)return;
-  try{
-    const ctx=buildAIContext();
-    const today=new Date().toISOString().split('T')[0];
-    const text=await callAI(
-      `You are a dispatch planning expert for Electro Apparels. Give a detailed daily briefing in clean HTML using ONLY <div>,<strong>,<span>,<br>,<table>,<tr>,<td>,<th> tags. No markdown backticks. Use emojis. Be specific.`,
-      `Today: ${today}. Data:\n${ctx}\n\nGive a full daily briefing with these sections:\n1. 🚨 URGENT (overdue/critical POs needing action today)\n2. ⚠️ AT RISK (POs where production stage suggests delivery date may be missed)\n3. 📋 THIS WEEK (key dispatches due in next 7 days)\n4. 💡 RECOMMENDATIONS (2-3 specific actions to take)\n\nBe specific with PO numbers, supplier names, quantities. Use HTML formatting.`
-    ,1500);
-    c.innerHTML=`<div style="font-size:12.5px;line-height:1.8">${text}</div>
-    <div style="margin-top:12px"><button class="btn btn-s btn-sm" onclick="runFullBriefing()">↻ Refresh Briefing</button></div>`;
-  }catch(e){c.innerHTML=`<div style="color:var(--muted);font-size:12px">⚠️ Could not load. <button class="btn btn-xs btn-s" onclick="runFullBriefing()">Retry</button></div>`;}
-}
-
-// ----- DELAY PREDICTION TAB -----
-function renderAIPredictTab(c){
-  c.innerHTML=`<div id="aiPredictContent">
-    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">AI analyses production stage progress vs. PO delivery dates to predict which POs are at risk.</div>
-    <button class="btn btn-p" onclick="runDelayPrediction()">🔮 Run Delay Prediction Analysis</button>
-    <div id="aiPredictResult" style="margin-top:14px"></div>
-  </div>`;
-}
-async function runDelayPrediction(){
-  const r=document.getElementById('aiPredictResult');
-  r.innerHTML=`<div class="ai-loading"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span><span style="margin-left:6px">Analysing production stages vs. deadlines…</span></div>`;
-  try{
-    // Build production data
-    let allProd={};
-    try{allProd=JSON.parse(localStorage.getItem('electroDispatch_allProduction')||'{}');}catch(e){}
-    const prodSummary=S.suppliers.map(s=>{
-      const prod=allProd[s.id];
-      if(!prod)return `${s.name}: No production data submitted`;
-      return `${s.name}: ${Object.entries(prod.status||{}).map(([art,st])=>{
-        const totalQty=S.pos.filter(p=>p.supplierId===s.id&&(p.article||'Unknown')===art).reduce((a,p)=>a+p.qty,0);
-        return `SKU ${art} — Yarn:${st.yarn||0} Dyeing:${st.dyeing||0} Fabric:${st.fabric||0} Cutting:${st.cutting||0} Stitching:${st.stitching||0} Packing:${st.packing||0} Ready:${st.ready||0} / Total:${totalQty}`;
-      }).join('; ')}`;
-    }).join('\n');
-    const ctx=buildAIContext();
-    const today=new Date().toISOString().split('T')[0];
-    const text=await callAI(
-      `You are a garment production expert. Analyse production stage data and delivery dates to predict delays. Output clean HTML only using div,strong,span,br,table,tr,td,th tags. Be specific with numbers and PO references.`,
-      `Today: ${today}.\n\nPO & delivery data:\n${ctx}\n\nProduction stage data from suppliers:\n${prodSummary}\n\nFor each PO or SKU, predict:\n1. 🔴 HIGH RISK — likely to miss delivery date (explain why based on stage)\n2. 🟡 MEDIUM RISK — tight but possible\n3. 🟢 ON TRACK — production pace looks fine\n\nAlso give an overall risk score out of 10 for each supplier. Format as a clear HTML table then explanation.`
-    ,1600);
-    r.innerHTML=`<div style="font-size:12.5px;line-height:1.8">${text}</div>`;
-  }catch(e){r.innerHTML=`<div style="color:var(--muted);font-size:12px">⚠️ Could not load. <button class="btn btn-xs btn-s" onclick="runDelayPrediction()">Retry</button></div>`;}
-}
-
-// ----- SUPPLIER SCORING TAB -----
-function renderAIScoreTab(c){
-  c.innerHTML=`<div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">AI scores each supplier on reliability, delay history, and production transparency.</div>
-    <button class="btn btn-p" onclick="runSupplierScoring()">🏆 Generate Supplier Scorecards</button>
-    <div id="aiScoreResult" style="margin-top:14px"></div>
-  </div>`;
-}
-async function runSupplierScoring(){
-  const r=document.getElementById('aiScoreResult');
-  r.innerHTML=`<div class="ai-loading"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span><span style="margin-left:6px">Scoring suppliers…</span></div>`;
-  try{
-    let allProd={};
-    try{allProd=JSON.parse(localStorage.getItem('electroDispatch_allProduction')||'{}');}catch(e){}
-    const supData=S.suppliers.map(s=>{
-      const sPos=S.pos.filter(p=>p.supplierId===s.id);
-      const delayed=sPos.filter(p=>isDelayed(p));
-      const overdue=sPos.filter(p=>isOverdue(p.extDate||p.apptDate||p.deliveryDate));
-      const noReason=delayed.filter(p=>!p.delayReason);
-      const prod=allProd[s.id];
-      const readyPct=prod?Object.entries(prod.status||{}).reduce((acc,[art,st])=>{
-        const tq=S.pos.filter(p=>p.supplierId===s.id&&(p.article||'Unknown')===art).reduce((a,p)=>a+p.qty,0);
-        return tq>0?{ready:acc.ready+(parseInt(st.ready||0)),total:acc.total+tq}:acc;
-      },{ready:0,total:0}):{ready:0,total:0};
-      return `Supplier: ${s.name} | City: ${s.city||'?'} | Total POs: ${sPos.length} | Delayed: ${delayed.length} | Overdue: ${overdue.length} | Missing delay reasons: ${noReason.length} | Production data submitted: ${prod?'Yes':'No'} | Ready goods: ${readyPct.total>0?Math.round(readyPct.ready/readyPct.total*100)+'%':'Unknown'}`;
-    }).join('\n');
-    const text=await callAI(
-      `You are a procurement analyst. Score garment suppliers. Output clean HTML only — div,strong,span,br,table,tr,td,th. Use emojis. Be honest and constructive.`,
-      `Supplier performance data:\n${supData}\n\nFor each supplier generate a scorecard with:\n- Overall score /100\n- Reliability score (based on delay/overdue rate)\n- Transparency score (production updates, delay reasons given)\n- Trend (improving/stable/declining)\n- 1 strength and 1 area to improve\n\nFormat as styled HTML cards. Show scores as numbers and give a short verdict.`
-    ,1500);
-    r.innerHTML=`<div style="font-size:12.5px;line-height:1.8">${text}</div>`;
-  }catch(e){r.innerHTML=`<div style="color:var(--muted);font-size:12px">⚠️ Could not load. <button class="btn btn-xs btn-s" onclick="runSupplierScoring()">Retry</button></div>`;}
-}
-
-// ----- MESSAGE DRAFTS TAB -----
-function renderAIMessageTab(c){
-  const delayedPOs=S.pos.filter(p=>isDelayed(p));
-  const supOptions=S.suppliers.map(s=>`<option value="${s.id}">${s.name}</option>`).join('');
-  c.innerHTML=`<div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:14px">AI drafts WhatsApp or email messages to suppliers about delayed POs, ready for you to copy and send.</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
-      <div class="fg">
-        <label>Supplier</label>
-        <select id="msgSupSel">${supOptions||'<option>No suppliers</option>'}</select>
-      </div>
-      <div class="fg">
-        <label>Message Type</label>
-        <select id="msgType">
-          <option value="delay_chase">Chase delayed POs</option>
-          <option value="production_update">Request production update</option>
-          <option value="overdue_warning">Overdue warning</option>
-          <option value="friendly_reminder">Friendly reminder</option>
-          <option value="appreciation">Appreciation for on-time</option>
-        </select>
-      </div>
-    </div>
-    <div style="display:flex;gap:8px;margin-bottom:14px">
-      <div class="fg">
-        <label>Tone</label>
-        <select id="msgTone">
-          <option value="professional">Professional</option>
-          <option value="friendly">Friendly</option>
-          <option value="firm">Firm</option>
-          <option value="urgent">Urgent</option>
-        </select>
-      </div>
-      <div class="fg">
-        <label>Format</label>
-        <select id="msgFormat">
-          <option value="whatsapp">WhatsApp message</option>
-          <option value="email">Email</option>
-        </select>
-      </div>
-    </div>
-    <button class="btn btn-p" onclick="runMessageDraft()">✉️ Draft Message</button>
-    <div id="aiMsgResult" style="margin-top:14px"></div>
-  </div>`;
-}
-async function runMessageDraft(){
-  const r=document.getElementById('aiMsgResult');
-  const supId=document.getElementById('msgSupSel')?.value;
-  const msgType=document.getElementById('msgType')?.value;
-  const tone=document.getElementById('msgTone')?.value;
-  const format=document.getElementById('msgFormat')?.value;
-  const sup=S.suppliers.find(s=>s.id===supId);
-  if(!sup){r.innerHTML=`<div style="color:var(--orange);font-size:12px">Please select a supplier first.</div>`;return;}
-  r.innerHTML=`<div class="ai-loading"><span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span><span style="margin-left:6px">Drafting message…</span></div>`;
-  const sPos=S.pos.filter(p=>p.supplierId===supId);
-  const delayed=sPos.filter(p=>isDelayed(p));
-  const overdue=sPos.filter(p=>isOverdue(p.extDate||p.apptDate||p.deliveryDate));
-  const poDetails=sPos.map(p=>`PO# ${p.poNum} | ${p.article} | ${p.qty} pcs | Due: ${fd(p.deliveryDate)} | Appt: ${fd(p.apptDate||p.extDate)} | Status: ${isOverdue(p.extDate||p.apptDate||p.deliveryDate)?'OVERDUE':isDelayed(p)?'DELAYED':'OK'} | Reason: ${p.delayReason||'none given'}`).join('\n');
-  try{
-    const text=await callAI(
-      `You are drafting a business message from Electro Apparels to a garment supplier. Write ONLY the message text, ready to copy-paste. No HTML. No explanations. Just the message. For WhatsApp: conversational, use line breaks and emojis where appropriate. For Email: include Subject: line, then body.`,
-      `Write a ${tone} ${format} message from Electro Apparels to supplier "${sup.name}" (contact: ${sup.contact||'Sir/Madam'}).\n\nMessage type: ${msgType}\n\nTheir PO details:\n${poDetails}\n\nDelayed POs: ${delayed.length}, Overdue: ${overdue.length}\n\nToday's date: ${new Date().toLocaleDateString('en-IN')}\n\nMake it specific, mention actual PO numbers and dates. Keep it concise.`
-    ,600);
-    r.innerHTML=`
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <div style="font-size:11px;font-family:var(--font-m);color:var(--muted)">DRAFTED MESSAGE — COPY & SEND</div>
-        <button class="btn btn-s btn-xs" onclick="navigator.clipboard.writeText(document.getElementById('msgText').textContent).then(()=>showToast('✓ Copied!'))">Copy</button>
-      </div>
-      <div class="msg-draft" id="msgText">${text}</div>
-      <div style="margin-top:8px;display:flex;gap:8px">
-        <button class="btn btn-s btn-sm" onclick="runMessageDraft()">↻ Regenerate</button>
-      </div>`;
-  }catch(e){r.innerHTML=`<div style="color:var(--muted);font-size:12px">⚠️ Could not generate. <button class="btn btn-xs btn-s" onclick="runMessageDraft()">Retry</button></div>`;}
-}
-
-// ----- CHAT TAB -----
-function renderAIChatTab(c){
-  c.innerHTML=`
-    <div class="ai-chips" style="margin-bottom:10px">
-      <div class="ai-chip" onclick="askAI(this.textContent)">Which POs are overdue?</div>
-      <div class="ai-chip" onclick="askAI(this.textContent)">Total pieces per SKU</div>
-      <div class="ai-chip" onclick="askAI(this.textContent)">March delivery plan</div>
-      <div class="ai-chip" onclick="askAI(this.textContent)">Which transporter goes to which warehouse?</div>
-      <div class="ai-chip" onclick="askAI(this.textContent)">Pieces per supplier</div>
-      <div class="ai-chip" onclick="askAI(this.textContent)">Missing delay reasons</div>
-      <div class="ai-chip" onclick="askAI(this.textContent)">Full dispatch sheet for today</div>
-      <div class="ai-chip" onclick="askAI(this.textContent)">Supplier with most delays</div>
-    </div>
-    <div class="ai-container">
-      <div class="ai-messages" id="aiMsgs">
-        <div class="ai-msg assistant">
-          👋 Ask me anything about your dispatch plan — delays, SKUs, suppliers, transporters, delivery dates.<br><br>
-          Or use the other tabs for <strong>Delay Predictions</strong>, <strong>Supplier Scoring</strong>, and <strong>Message Drafts</strong>.
+    const delayed=S.pos.filter(p=>isDelayed(p)).length;
+    const totalQty=S.pos.reduce((a,p)=>a+p.qty,0);
+    card.innerHTML=`<div class="ai-briefing">
+      <div class="ai-briefing-header"><div class="ai-briefing-icon">📋</div>
+      <div><div class="ai-briefing-title">DISPATCH SUMMARY</div></div></div>
+      <div class="ai-briefing-body">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:8px">
+          <div style="background:rgba(240,165,0,.08);border:1px solid rgba(240,165,0,.2);border-radius:8px;padding:12px;text-align:center">
+            <div style="font-size:22px;font-weight:700;color:var(--accent)">${S.pos.length}</div>
+            <div style="font-size:11px;color:var(--muted)">Total POs</div>
+          </div>
+          <div style="background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);border-radius:8px;padding:12px;text-align:center">
+            <div style="font-size:22px;font-weight:700;color:var(--red)">${delayed}</div>
+            <div style="font-size:11px;color:var(--muted)">Delayed</div>
+          </div>
+          <div style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.2);border-radius:8px;padding:12px;text-align:center">
+            <div style="font-size:22px;font-weight:700;color:var(--green)">${totalQty.toLocaleString('en-IN')}</div>
+            <div style="font-size:11px;color:var(--muted)">Total Pcs</div>
+          </div>
         </div>
       </div>
-      <div class="ai-input-row">
-        <textarea id="aiIn" placeholder="Ask about your dispatch plan…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAI();}"></textarea>
-        <button class="btn btn-p" onclick="sendAI()" style="height:42px;padding:0 14px">Send ↑</button>
-      </div>
     </div>`;
-  // Re-render chat history
-  if(S.aiHistory.length>0){
-    const msgs=document.getElementById('aiMsgs');
-    S.aiHistory.forEach(m=>{
-      if(m.role==='user'){const d=document.createElement('div');d.className='ai-msg user';d.textContent=m.content;msgs.appendChild(d);}
-      else if(m.role==='assistant'&&m.content){const d=document.createElement('div');d.className='ai-msg assistant';d.innerHTML=m.content;msgs.appendChild(d);}
-    });
-    msgs.scrollTop=msgs.scrollHeight;
   }
 }
-function clearAIHistory(){S.aiHistory=[];renderAI();}
-function askAI(q){
-  // Switch to chat tab first
-  aiInsightTab='chat';
-  document.querySelectorAll('.ai-tab-btn').forEach(b=>b.classList.remove('active'));
-  const chatBtn=document.querySelector('.ai-tab-btn:last-child');
-  if(chatBtn)chatBtn.classList.add('active');
-  renderAIChatTab(document.getElementById('aiTabContent'));
-  setTimeout(()=>{
-    const inp=document.getElementById('aiIn');
-    if(inp){inp.value=q;sendAI();}
-  },100);
+
+// ==================== DELAY PREDICTOR ====================
+async function predictDelay(poId){
+  const po=S.pos.find(p=>p.id===poId);if(!po)return;
+  const card=document.getElementById('aiBriefingCard');
+  if(card)card.innerHTML=`<div class="ai-briefing"><div class="ai-briefing-header"><div class="ai-briefing-icon">🔮</div><div><div class="ai-briefing-title">DELAY RISK ANALYSIS</div><div class="ai-briefing-sub">PO ${po.poNum} — Analysing…</div></div></div></div>`;
+  showPanel('dashboard',null);
+  try{
+    const sup=S.suppliers.find(s=>s.id===po.supplierId);
+    const text=await callAI(
+      'You are a garment supply chain expert. Analyse delay risk concisely. Give: Risk Level (LOW/MEDIUM/HIGH), reason, and 1-2 actions. Use plain text, max 80 words.',
+      `PO:${po.poNum}, SKU:${po.description}, Qty:${po.qty}, Delivery:${po.deliveryDate}, Appt:${po.apptDate||'not set'}, Extended:${po.extDate||'none'}, Reason:${po.delayReason||'none'}, Supplier:${sup?sup.name:'unassigned'}`
+    );
+    if(card)card.innerHTML=`<div class="ai-briefing">
+      <div class="ai-briefing-header"><div class="ai-briefing-icon">🔮</div>
+      <div><div class="ai-briefing-title">DELAY RISK — PO ${po.poNum}</div></div></div>
+      <div class="ai-briefing-body" style="margin-top:10px;font-size:12px;line-height:1.6">${text}</div>
+    </div>`;
+  }catch(e){showToast('⚠️ Could not analyse delay risk');}
 }
+function closeDelayPred(){}
+
+// ==================== MESSAGE DRAFTER ====================
+async function draftMessage(poId){
+  const po=S.pos.find(p=>p.id===poId);if(!po)return;
+  const sup=S.suppliers.find(s=>s.id===po.supplierId);
+  showToast('🤖 Drafting WhatsApp message…');
+  try{
+    const text=await callAI(
+      'Draft a short WhatsApp message from a garment middleman/exporter to a supplier about a PO. Be professional and firm. Max 4 sentences. No subject line.',
+      `PO:${po.poNum}, Item:${po.description}, Qty:${po.qty} pcs, Delivery due:${po.deliveryDate}, Supplier:${sup?sup.name:'supplier'}, Issue:${po.delayReason||'please confirm dispatch date'}`
+    );
+    // Show in a popup
+    const div=document.createElement('div');
+    div.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center';
+    div.innerHTML=`<div data-msg="${text.replace(/"/g,'&quot;')}" style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;max-width:440px;width:90%">
+      <div style="font-family:var(--font-d);font-size:16px;color:var(--accent);margin-bottom:12px">📱 WHATSAPP MESSAGE</div>
+      <div style="background:var(--surface2);border-radius:8px;padding:14px;font-size:13px;line-height:1.6;white-space:pre-wrap">${text}</div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn btn-p btn-sm" onclick="navigator.clipboard.writeText(this.closest('[data-msg]').dataset.msg).then(()=>showToast('✅ Copied!'))">📋 Copy</button>
+        <button class="btn btn-s btn-sm" onclick="this.closest('div[style]').remove()">Close</button>
+      </div>
+    </div>`;
+    document.body.appendChild(div);
+  }catch(e){showToast('⚠️ Could not draft message');}
+}
+function closeDraftMsg(){}
+
+// ==================== SUPPLIER SCORER ====================
+async function scoreSuppliers(){
+  if(!S.suppliers.length){showToast('No suppliers to score');return;}
+  showToast('🤖 Scoring suppliers…');
+  const card=document.getElementById('aiBriefingCard');
+  showPanel('dashboard',null);
+  if(card)card.innerHTML=`<div class="ai-briefing"><div class="ai-briefing-header"><div class="ai-briefing-icon">⭐</div><div><div class="ai-briefing-title">SUPPLIER SCORECARD</div><div class="ai-briefing-sub">Analysing performance…</div></div></div></div>`;
+  try{
+    const supData=S.suppliers.map(s=>{
+      const pos=S.pos.filter(p=>p.supplierId===s.id);
+      const delayed=pos.filter(p=>isDelayed(p)).length;
+      const totalQty=pos.reduce((a,p)=>a+p.qty,0);
+      return `${s.name}: ${pos.length} POs, ${totalQty.toLocaleString('en-IN')} pcs, ${delayed} delayed`;
+    }).join('\n');
+    const text=await callAI(
+      'Score each garment supplier from 1-10 based on PO count and delay rate. Format as HTML table with columns: Supplier, Score, Notes. Use <table><tr><th><td> tags only.',
+      supData
+    );
+    if(card)card.innerHTML=`<div class="ai-briefing">
+      <div class="ai-briefing-header"><div class="ai-briefing-icon">⭐</div>
+      <div><div class="ai-briefing-title">SUPPLIER SCORECARD</div></div></div>
+      <div class="ai-briefing-body" style="margin-top:10px;font-size:12px">${text}</div>
+    </div>`;
+  }catch(e){showToast('⚠️ Could not score suppliers');}
+}
+
+// ==================== AI CHAT ====================
+let S_aiHistory=[];
 async function sendAI(){
   const inp=document.getElementById('aiIn');
-  const q=inp?.value.trim();if(!q)return;
+  if(!inp)return;
+  const q=inp.value.trim();if(!q)return;
   inp.value='';
   const msgs=document.getElementById('aiMsgs');
   if(!msgs)return;
-  const userDiv=document.createElement('div');userDiv.className='ai-msg user';userDiv.textContent=q;msgs.appendChild(userDiv);
+  msgs.innerHTML+=`<div style="text-align:right;margin-bottom:10px"><span style="background:rgba(240,165,0,.15);border:1px solid rgba(240,165,0,.3);border-radius:10px 10px 2px 10px;padding:8px 12px;font-size:12px;display:inline-block;max-width:80%">${q}</span></div>`;
+  const typing=document.createElement('div');
+  typing.style.cssText='margin-bottom:10px;font-size:12px;color:var(--muted)';
+  typing.textContent='🤖 Thinking…';
+  msgs.appendChild(typing);
   msgs.scrollTop=msgs.scrollHeight;
-  const typingDiv=document.createElement('div');typingDiv.className='ai-msg assistant';
-  typingDiv.innerHTML='<span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>';
-  msgs.appendChild(typingDiv);msgs.scrollTop=msgs.scrollHeight;
-  const context=buildAIContext();
-  S.aiHistory.push({role:'user',content:q});
+  S_aiHistory.push({role:'user',content:q});
   try{
-    const data=await aiPost({
-      model:AI_MODEL,max_tokens:1000,
-      system:`You are a dispatch planning assistant for Electro Apparels, a garment middleman. Answer questions about POs, suppliers, SKUs, delays, transporters and delivery schedules. Use HTML tables when showing structured data. Format numbers in Indian system. Be specific with PO numbers and dates.\n\nCurrent data:\n${context}`,
-      messages:S.aiHistory.slice(-8).map(m=>({role:m.role,content:m.content}))
-    });
-    const text=data.content?.find(c=>c.type==='text')?.text||'Sorry, I could not process that.';
-    typingDiv.innerHTML=text;
-    S.aiHistory.push({role:'assistant',content:text});
+    const totalQty=S.pos.reduce((a,p)=>a+p.qty,0);
+    const delayed=S.pos.filter(p=>isDelayed(p));
+    const context=`You are a dispatch planning assistant for Electro Apparels. Current data: ${S.pos.length} POs, ${totalQty.toLocaleString('en-IN')} pieces total, ${delayed.length} delayed, ${S.suppliers.length} suppliers, ${S.warehouses.length} warehouses. Answer concisely.`;
+    const d=await aiPost({model:AI_MODEL,max_tokens:600,
+      system:context,
+      messages:S_aiHistory.slice(-8)});
+    const text=d.content?.find(c=>c.type==='text')?.text||'Sorry, could not process that.';
+    typing.innerHTML=`<div style="background:var(--surface2);border:1px solid var(--border);border-radius:2px 10px 10px 10px;padding:8px 12px;max-width:85%;font-size:12px;line-height:1.6">${text}</div>`;
+    S_aiHistory.push({role:'assistant',content:text});
   }catch(e){
-    typingDiv.innerHTML='⚠️ Could not connect. Please check your connection.';
+    typing.textContent='⚠️ Could not connect to AI.';
   }
   msgs.scrollTop=msgs.scrollHeight;
 }
-function buildAIContext(){
-  const totalQty=S.pos.reduce((a,p)=>a+p.qty,0);
-  const delayed=S.pos.filter(p=>isDelayed(p));
-  const overdue=S.pos.filter(p=>isOverdue(p.extDate||p.apptDate||p.deliveryDate));
-  const unassigned=S.pos.filter(p=>!p.supplierId);
-
-  // SKU summary
-  const skuMap={};
-  S.pos.forEach(p=>{const k=p.article||'Unknown';if(!skuMap[k])skuMap[k]={article:k,desc:p.description,qty:0,pos:0};skuMap[k].qty+=p.qty;skuMap[k].pos++;});
-
-  // Monthly
-  const mMap={};
-  S.pos.forEach(p=>{const k=getMonthKey(p);if(!mMap[k])mMap[k]={qty:0,count:0};mMap[k].qty+=p.qty;mMap[k].count++;});
-
-  // Supplier summary
-  const supSummary=S.suppliers.map(s=>{
-    const sPos=S.pos.filter(p=>p.supplierId===s.id);
-    return `${s.name} (${s.city||'?'}): ${sPos.length} POs, ${sPos.reduce((a,p)=>a+p.qty,0).toLocaleString('en-IN')} pcs, Articles: ${[...new Set(sPos.map(p=>p.article||'?'))].join(', ')}`;
-  }).join('\n');
-
-  // Transporter summary
-  const trSummary=S.warehouses.map(w=>{
-    const tr=S.transporters.find(t=>t.id===S.whTransporterMap[w.code]);
-    const pending=S.pos.filter(p=>p.site===w.code).length;
-    const qty=S.pos.filter(p=>p.site===w.code).reduce((a,p)=>a+p.qty,0);
-    return `WH ${w.code} (${w.name}): ${tr?`Transporter = ${tr.name}${tr.company?' / '+tr.company:''}, Contact: ${tr.contact||'?'}, Phone: ${tr.phone||'?'}${tr.altPhone?' / '+tr.altPhone:''}, Vehicle: ${tr.vehicleType||'?'} ${tr.vehicleNo||''}`:'NO TRANSPORTER ASSIGNED'} | ${pending} POs | ${qty.toLocaleString('en-IN')} pcs`;
-  }).join('\n');
-
-  return `
-OVERVIEW: ${S.pos.length} total POs, ${totalQty.toLocaleString('en-IN')} total pieces, ${S.suppliers.length} suppliers, ${S.warehouses.length} warehouses, ${S.transporters.length} transporters
-DELAYED POs: ${delayed.length} (${delayed.filter(p=>!p.delayReason).length} missing reasons)
-OVERDUE POs: ${overdue.length}
-UNASSIGNED POs: ${unassigned.length}
-
-SKU SUMMARY:
-${Object.values(skuMap).map(s=>`- ${s.article}: ${s.desc} | ${s.qty.toLocaleString('en-IN')} pcs across ${s.pos} POs`).join('\n')}
-
-MONTHLY DISPATCH PLAN:
-${Object.entries(mMap).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>`- ${getMonthLabel(k)}: ${v.qty.toLocaleString('en-IN')} pcs, ${v.count} POs`).join('\n')}
-
-SUPPLIER ALLOCATION:
-${supSummary||'No suppliers assigned yet'}
-${unassigned.length?`Unassigned: ${unassigned.length} POs, ${unassigned.reduce((a,p)=>a+p.qty,0).toLocaleString('en-IN')} pcs`:''}
-
-WAREHOUSE → TRANSPORTER MAP:
-${trSummary||'No transporters set up yet'}
-
-WAREHOUSES: ${S.warehouses.map(w=>`${w.name} (${w.code}): ${S.pos.filter(p=>p.site===w.code).length} POs`).join(', ')}
-
-ALL POs (for reference):
-${S.pos.map(p=>{
-  const sup=S.suppliers.find(s=>s.id===p.supplierId);
-  const wh=S.warehouses.find(w=>w.code===p.site);
-  const tr=S.transporters.find(t=>t.id===S.whTransporterMap[p.site]);
-  const dl=isDelayed(p);const ov=isOverdue(p.extDate||p.apptDate||p.deliveryDate);
-  return `PO#${p.poNum} | ${p.article} | ${p.description} | Qty:${p.qty} | MRP:₹${p.mrp||'?'} | PODate:${fd(p.deliveryDate)} | Appt:${fd(p.apptDate||p.extDate)} | WH:${wh?wh.name:p.site||'?'} | Supplier:${sup?sup.name:'UNASSIGNED'} | Transporter:${tr?tr.name:'NOT ASSIGNED'} | ${ov?'OVERDUE':dl?`DELAYED(+${ddiff(pd(p.extDate||p.apptDate),pd(p.deliveryDate))}d,reason:${p.delayReason||'MISSING'})`:'OK'}`;
-}).join('\n')}`;
+function openAIChat(q){
+  showPanel('ai',null);
+  if(q){const inp=document.getElementById('aiIn');if(inp){inp.value=q;sendAI();}}
 }
-
-// ==================== TIMELINE ====================
-function renderTimeline(){
-  const el=document.getElementById('view-timeline');
-  const sorted=[...S.pos].sort((a,b)=>(pd(a.extDate||a.apptDate||a.deliveryDate)||new Date(9999,0))-(pd(b.extDate||b.apptDate||b.deliveryDate)||new Date(9999,0)));
-  if(!sorted.length){el.innerHTML='<div style="text-align:center;padding:40px;color:var(--muted)">No POs loaded</div>';return;}
-  const byD={};sorted.forEach(p=>{const k=tid(p.extDate||p.apptDate||p.deliveryDate)||'Unscheduled';if(!byD[k])byD[k]=[];byD[k].push(p);});
-  el.innerHTML=`<div style="font-family:var(--font-d);font-size:28px;letter-spacing:1px;margin-bottom:14px">DISPATCH TIMELINE</div>
-  <div style="position:relative;padding-left:20px">
-  <div style="position:absolute;left:5px;top:0;bottom:0;width:2px;background:var(--border)"></div>
-  ${Object.entries(byD).map(([dk,pos])=>{
-    const ov=isOverdue(dk);const hd=pos.some(p=>isDelayed(p));
-    const dc=ov?'var(--red)':hd?'var(--orange)':'var(--accent2)';
-    const tq=pos.reduce((a,p)=>a+p.qty,0);
-    return `<div style="position:relative;margin-bottom:14px">
-      <div style="position:absolute;left:-17px;top:3px;width:11px;height:11px;border-radius:50%;background:${dc};border:2px solid var(--bg)"></div>
-      <div style="font-size:10px;font-family:var(--font-m);color:var(--muted);margin-bottom:3px">${fd(dk)}${ov?' · OVERDUE':hd?' · DELAYED':''}</div>
-      <div style="font-size:11px;display:flex;flex-wrap:wrap;gap:6px;align-items:center">
-        <span class="badge" style="color:${dc};background:${dc}22">${tq.toLocaleString('en-IN')} pcs · ${pos.length} POs</span>
-        ${pos.map(p=>{const sup=S.suppliers.find(s=>s.id===p.supplierId);const wh=S.warehouses.find(w=>w.code===p.site);const dl=isDelayed(p);
-          return `<span style="font-size:10px;background:var(--surface2);border:1px solid var(--border);padding:2px 7px;border-radius:4px">
-            <span class="mono acc">#${p.poNum}</span> ${p.article||''} <span class="mono">${(p.qty||0).toLocaleString('en-IN')}pcs</span>
-            ${wh?`<span style="color:var(--green)">→${wh.code}</span>`:''}
-            ${sup?`<span style="color:${sup.color}">·${sup.name.split(' ')[0]}</span>`:'<span style="color:var(--purple)">·?</span>'}
-            ${dl?`<span style="color:var(--orange)">+${ddiff(pd(p.extDate||p.apptDate),pd(p.deliveryDate))}d</span>`:''}
-          </span>`;}).join('')}
-      </div>
-    </div>`;
-  }).join('')}
-  </div>`;
-}
-
-// ==================== PO MODAL ====================
-function openPOModal(id,pre){
-  const po=id?S.pos.find(p=>p.id===id):null;const p=po||pre||{};
-  document.getElementById('mPOt').textContent=po?`Edit PO #${po.poNum}`:`Add PO${p._fn?' — '+p._fn:''}`;
-  const whO=S.warehouses.map(w=>`<option value="${w.code}" ${(po?.site||p.site)===w.code?'selected':''}>${w.name} (${w.code})</option>`).join('');
-  const sO=['<option value="">— Unassigned (Electro Apparels self) —</option>',...S.suppliers.map(s=>`<option value="${s.id}" ${(po?.supplierId||p.supplierId)===s.id?'selected':''}>${s.name} · ${s.city||'?'}</option>`)].join('');
-  document.getElementById('mPOb').innerHTML=`
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px">
-      <div class="fg"><label>PO Number *</label><input id="mp1" value="${p.poNum||''}"></div>
-      <div class="fg"><label>Article Code</label><input id="mp2" value="${p.article||''}"></div>
-    </div>
-    <div class="fg" style="margin-bottom:9px"><label>Description</label><input id="mp3" value="${p.description||''}"></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px;margin-bottom:9px">
-      <div class="fg"><label>Qty (pcs)</label><input id="mp4" type="number" value="${p.qty||''}"></div>
-      <div class="fg"><label>MRP (₹)</label><input id="mp5" value="${p.mrp||''}"></div>
-      <div class="fg"><label>Base Price (₹)</label><input id="mp6" value="${p.price||''}"></div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px;margin-bottom:9px">
-      <div class="fg">
-        <label>PO Expected Delivery Date</label>
-        <input id="mp7" type="date" value="${tid(po?.deliveryDate||p.deliveryDate)}" onchange="chkDel()">
-        <span style="font-size:9px;color:var(--muted)">As printed on PO</span>
-      </div>
-      <div class="fg">
-        <label>Appointment Date</label>
-        <input id="mp8" type="date" value="${tid(po?.apptDate||p.apptDate)}" onchange="chkDel()">
-        <span style="font-size:9px;color:var(--muted)">Actual scheduled date</span>
-      </div>
-      <div class="fg">
-        <label>Extension Date</label>
-        <input id="mp9" type="date" value="${tid(po?.extDate||p.extDate)}" onchange="chkDel()">
-        <span style="font-size:9px;color:var(--muted)">If further pushed</span>
-      </div>
-    </div>
-    <div id="mDelInline" style="margin-bottom:8px"></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px">
-      <div class="fg"><label>Destination Warehouse</label><select id="mp10">${whO}<option value="">— Select —</option></select></div>
-      <div class="fg">
-        <label>Supplier providing goods to Electro ↓</label>
-        <select id="mp11">${sO}</select>
-        <span style="font-size:9px;color:var(--muted)">Transporter picks up from this supplier</span>
-      </div>
-    </div>
-    <div class="fg" style="margin-bottom:13px">
-      <label>Delay Reason <span id="dReqMark" style="color:var(--orange)"></span></label>
-      <input id="mp12" value="${po?.delayReason||p.delayReason||''}" placeholder="Leave blank if no delay">
-    </div>
-    <div style="display:flex;gap:8px">
-      <button class="btn btn-p" onclick="savePO('${id||''}')">Save</button>
-      <button class="btn btn-s" onclick="cm('mPO')">Cancel</button>
-      ${id?`<button class="btn btn-d" onclick="delPO('${id}')">Delete</button>`:''}
-    </div>`;
-  document.getElementById('mPO').classList.remove('hidden');
-  setTimeout(chkDel,60);
-}
-function chkDel(){
-  const del=document.getElementById('mp7')?.value;
-  const appt=document.getElementById('mp9')?.value||document.getElementById('mp8')?.value;
-  const inline=document.getElementById('mDelInline');const rm=document.getElementById('dReqMark');const r12=document.getElementById('mp12');
-  if(!inline)return;
-  if(del&&appt&&appt>del){
-    const days=ddiff(pd(appt),pd(del));
-    inline.innerHTML=`<div class="delay-alert">⚠️ Appointment is <strong>${days} day(s)</strong> after PO expected delivery date. Please enter a delay reason below.</div>`;
-    if(rm)rm.textContent='*';if(r12)r12.classList.add('warn-input');
-  }else{inline.innerHTML='';if(rm)rm.textContent='';if(r12)r12.classList.remove('warn-input');}
-}
-function savePO(id){
-  const poNum=document.getElementById('mp1').value.trim();if(!poNum)return alert('PO number required');
-  const data={poNum,article:document.getElementById('mp2').value,description:document.getElementById('mp3').value,
-    qty:parseFloat(document.getElementById('mp4').value)||0,mrp:document.getElementById('mp5').value,price:document.getElementById('mp6').value,
-    deliveryDate:document.getElementById('mp7').value,apptDate:document.getElementById('mp8').value,extDate:document.getElementById('mp9').value,
-    site:document.getElementById('mp10').value,supplierId:document.getElementById('mp11').value,delayReason:document.getElementById('mp12').value};
-  const eff=pd(data.extDate||data.apptDate),del2=pd(data.deliveryDate);
-  if(eff&&del2&&eff>del2&&!data.delayReason){if(!confirm('Appointment is later than PO delivery date. Save without delay reason?'))return;}
-  if(id){const po=S.pos.find(p=>p.id===id);if(po)Object.assign(po,data);}
-  else S.pos.push({id:'PO'+Date.now(),...data});
-  cm('mPO');refreshAll();
-}
-function delPO(id){if(!confirm('Remove this PO?'))return;S.pos=S.pos.filter(p=>p.id!==id);cm('mPO');refreshAll();}
-
-// ==================== SUPPLIER MODAL ====================
-function openSupModal(id){
-  const sup=id?S.suppliers.find(s=>s.id===id):null;
-  document.getElementById('mSupt').textContent=sup?'Edit Supplier':'Add Supplier';
-  const sw=COLORS.map(c=>`<div class="swatch ${(sup?.color||COLORS[0])===c?'sel':''}" style="background:${c}" onclick="pickCol('${c}',this)"></div>`).join('');
-  document.getElementById('mSupb').innerHTML=`
-    <p style="font-size:11px;color:var(--muted);margin-bottom:12px">Suppliers are companies that <strong style="color:var(--accent)">provide goods to Electro Apparels</strong>. The transporter picks up from their address and delivers to buyer warehouses.</p>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px">
-      <div class="fg"><label>Supplier Name *</label><input id="ss1" value="${sup?.name||''}"></div>
-      <div class="fg"><label>City / Location</label><input id="ss2" value="${sup?.city||''}"></div>
-    </div>
-    <div class="fg" style="margin-bottom:9px"><label>Full Address (transporter pickup point)</label><input id="ss7" value="${sup?.address||''}"></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px">
-      <div class="fg"><label>Phone</label><input id="ss3" value="${sup?.phone||''}"></div>
-      <div class="fg"><label>Email</label><input id="ss4" value="${sup?.email||''}"></div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px">
-      <div class="fg"><label>GSTIN</label><input id="ss5" value="${sup?.gstin||''}"></div>
-      <div class="fg"><label>Contact Person</label><input id="ss6" value="${sup?.contact||''}"></div>
-    </div>
-    <div class="fg" style="margin-bottom:12px"><label>Colour Tag</label><div style="display:flex;gap:6px;margin-top:4px" id="swRow">${sw}</div></div>
-    <input type="hidden" id="ss-col" value="${sup?.color||COLORS[0]}">
-    <div style="display:flex;gap:8px">
-      <button class="btn btn-p" onclick="saveSup('${id||''}')">Save</button>
-      <button class="btn btn-s" onclick="cm('mSup')">Cancel</button>
-      ${id?`<button class="btn btn-d" onclick="delSup('${id}')">Delete</button>`:''}
-    </div>`;
-  document.getElementById('mSup').classList.remove('hidden');
-}
-function pickCol(c,el){document.getElementById('ss-col').value=c;el.closest('#swRow').querySelectorAll('.swatch').forEach(s=>s.classList.remove('sel'));el.classList.add('sel');}
-function saveSup(id){
-  const name=document.getElementById('ss1').value.trim();if(!name)return alert('Name required');
-  const d={name,city:document.getElementById('ss2').value,phone:document.getElementById('ss3').value,email:document.getElementById('ss4').value,gstin:document.getElementById('ss5').value,contact:document.getElementById('ss6').value,address:document.getElementById('ss7').value,color:document.getElementById('ss-col').value};
-  if(id){const s=S.suppliers.find(s=>s.id===id);if(s)Object.assign(s,d);}
-  else S.suppliers.push({id:'SUP'+Date.now(),...d});
-  cm('mSup');refreshAll();
-  // If there are unmapped SKUs, prompt immediately
-  setTimeout(()=>{if(getUnmappedSKUs().length>0&&S.pos.length>0)promptAssignIfNeeded();},300);
-}
-function delSup(id){
-  if(!confirm('Delete?'))return;
-  S.suppliers=S.suppliers.filter(s=>s.id!==id);
-  S.pos.forEach(p=>{if(p.supplierId===id)p.supplierId='';});
-  // Remove SKU mappings pointing to this supplier
-  Object.keys(S.skuSupplierMap).forEach(art=>{if(S.skuSupplierMap[art]===id)delete S.skuSupplierMap[art];});
-  cm('mSup');refreshAll();
-}
-
-// ==================== TRANSPORTER MODAL ====================
-function openTrModal(id){
-  const tr=id?S.transporters.find(t=>t.id===id):null;
-  const sw=COLORS.map(c=>`<div class="swatch ${(tr?.color||COLORS[3])===c?'sel':''}" style="background:${c}" onclick="pickTrCol('${c}',this)"></div>`).join('');
-  document.getElementById('mTRt').textContent=tr?'Edit Transporter':'Add Transporter';
-  document.getElementById('mTRb').innerHTML=`
-    <p style="font-size:11px;color:var(--muted);margin-bottom:12px">Transporters pick up goods from supplier locations and deliver to buyer warehouses. Each warehouse can have a designated transporter.</p>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px">
-      <div class="fg"><label>Transporter Name *</label><input id="tr1" value="${tr?.name||''}"></div>
-      <div class="fg"><label>Company / Fleet Name</label><input id="tr2" value="${tr?.company||''}"></div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px">
-      <div class="fg"><label>Primary Contact Person</label><input id="tr3" value="${tr?.contact||''}"></div>
-      <div class="fg"><label>Phone *</label><input id="tr4" value="${tr?.phone||''}"></div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px">
-      <div class="fg"><label>Alt Phone / WhatsApp</label><input id="tr5" value="${tr?.altPhone||''}"></div>
-      <div class="fg"><label>Email</label><input id="tr6" value="${tr?.email||''}"></div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px">
-      <div class="fg"><label>Vehicle Type</label>
-        <select id="tr7">
-          ${['Container Truck','Mini Truck','Tempo','LCV','HCV','Other'].map(v=>`<option ${(tr?.vehicleType||'')===v?'selected':''}>${v}</option>`).join('')}
-        </select>
-      </div>
-      <div class="fg"><label>Vehicle / Fleet No.</label><input id="tr8" value="${tr?.vehicleNo||''}"></div>
-    </div>
-    <div class="fg" style="margin-bottom:12px"><label>Address / Base Location</label><input id="tr9" value="${tr?.address||''}"></div>
-    <div class="fg" style="margin-bottom:12px"><label>Notes (routes, special instructions)</label><textarea id="tr10" rows="2" style="resize:vertical">${tr?.notes||''}</textarea></div>
-    <div class="fg" style="margin-bottom:13px"><label>Colour Tag</label><div style="display:flex;gap:6px;margin-top:4px" id="trSwRow">${sw}</div></div>
-    <input type="hidden" id="tr-col" value="${tr?.color||COLORS[3]}">
-    <div style="display:flex;gap:8px">
-      <button class="btn btn-p" onclick="saveTr('${id||''}')">Save</button>
-      <button class="btn btn-s" onclick="cm('mTR')">Cancel</button>
-      ${id?`<button class="btn btn-d" onclick="delTr('${id}')">Delete</button>`:''}
-    </div>`;
-  document.getElementById('mTR').classList.remove('hidden');
-}
-function pickTrCol(c,el){document.getElementById('tr-col').value=c;el.closest('#trSwRow').querySelectorAll('.swatch').forEach(s=>s.classList.remove('sel'));el.classList.add('sel');}
-function saveTr(id){
-  const name=document.getElementById('tr1').value.trim();if(!name)return alert('Name required');
-  const d={name,company:document.getElementById('tr2').value,contact:document.getElementById('tr3').value,
-    phone:document.getElementById('tr4').value,altPhone:document.getElementById('tr5').value,
-    email:document.getElementById('tr6').value,vehicleType:document.getElementById('tr7').value,
-    vehicleNo:document.getElementById('tr8').value,address:document.getElementById('tr9').value,
-    notes:document.getElementById('tr10').value,color:document.getElementById('tr-col').value};
-  if(id){const t=S.transporters.find(t=>t.id===id);if(t)Object.assign(t,d);}
-  else S.transporters.push({id:'TR'+Date.now(),...d});
-  cm('mTR');refreshAll();
-  // If warehouses have no transporter, prompt
-  setTimeout(()=>{const unmappedWH=S.warehouses.filter(w=>!S.whTransporterMap[w.code]);if(unmappedWH.length&&S.transporters.length)openWHTrMapModal();},300);
-}
-function delTr(id){
-  if(!confirm('Delete transporter?'))return;
-  S.transporters=S.transporters.filter(t=>t.id!==id);
-  Object.keys(S.whTransporterMap).forEach(wc=>{if(S.whTransporterMap[wc]===id)delete S.whTransporterMap[wc];});
-  cm('mTR');refreshAll();
-}
-
-// ==================== WH → TRANSPORTER MAP MODAL ====================
-function openWHTrMapModal(){
-  if(!S.transporters.length){
-    if(confirm('No transporters added yet. Add one first?')){openTrModal(null);}
-    return;
-  }
-  const trO=['<option value="">— Select Transporter —</option>',...S.transporters.map(t=>`<option value="${t.id}">${t.name}${t.company?' · '+t.company:''} ${t.phone?'('+t.phone+')':''}</option>`)].join('');
-  document.getElementById('mWHTRb').innerHTML=`
-    <div style="background:rgba(20,184,166,.08);border:1px solid rgba(20,184,166,.2);border-radius:7px;padding:11px 14px;margin-bottom:14px">
-      <div style="font-size:12px;font-weight:600;color:var(--teal);margin-bottom:3px">⚡ One-Time Setup per Warehouse</div>
-      <div style="font-size:11px;color:var(--muted)">Assign a transporter to each warehouse once. This mapping is permanent — every dispatch to that warehouse will automatically show the correct transporter's details for the driver's pickup sheet.</div>
-    </div>
-    ${S.warehouses.map(w=>{
-      const mapped=S.whTransporterMap[w.code];
-      const tr=mapped?S.transporters.find(t=>t.id===mapped):null;
-      const pending=S.pos.filter(p=>p.site===w.code).length;
-      return `<div style="background:var(--surface2);border:1px solid ${tr?tr.color+'44':'var(--border)'};border-radius:8px;padding:11px 13px;margin-bottom:9px">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
-          <div>
-            <div style="font-size:12px;font-weight:600">🏢 ${w.name}</div>
-            <div style="font-size:10px;color:var(--muted);margin-top:1px">${w.address||'No address'} · Site ${w.code}</div>
-            <div style="font-size:10px;color:var(--muted)">${pending} POs pending</div>
-          </div>
-          ${tr?`<span style="font-size:10px;padding:2px 7px;border-radius:3px;background:${tr.color}18;color:${tr.color};font-family:var(--font-m)">✓ ${tr.name}</span>`
-              :`<span style="font-size:10px;color:var(--orange)">⚠️ No transporter</span>`}
-        </div>
-        <div style="display:flex;align-items:center;gap:9px">
-          <div style="font-size:11px;color:var(--muted);white-space:nowrap">Transporter for this WH →</div>
-          <select id="whtr-${w.code}" style="flex:1;font-size:12px;padding:6px 9px">${trO.replace(`value="${mapped||''}"`,`value="${mapped||''}" selected`)}</select>
-        </div>
-      </div>`;
-    }).join('')}
-    <div style="display:flex;gap:8px;margin-top:12px">
-      <button class="btn btn-p" onclick="saveWHTrMap()">Save Mapping</button>
-      <button class="btn btn-s" onclick="cm('mWHTR')">Cancel</button>
-    </div>`;
-  document.getElementById('mWHTR').classList.remove('hidden');
-}
-function saveWHTrMap(){
-  S.warehouses.forEach(w=>{
-    const el=document.getElementById('whtr-'+w.code);
-    if(el){
-      if(el.value) S.whTransporterMap[w.code]=el.value;
-      else delete S.whTransporterMap[w.code];
-    }
-  });
-  cm('mWHTR');refreshAll();
-  const mapped=Object.keys(S.whTransporterMap).length;
-  showToast(`✅ Transporter mapping saved for ${mapped} warehouse(s).`);
-}
-function getUnmappedWHs(){return S.warehouses.filter(w=>!S.whTransporterMap[w.code]);}
-
-// ==================== TRANSPORTER LIST RENDER ====================
-function renderTrList(){
-  const el=document.getElementById('trListEl');if(!el)return;
-  if(!S.transporters.length){el.innerHTML='<p style="color:var(--muted);font-size:10px;padding:8px 0">No transporters yet. Add transporters then map them to warehouses.</p>';return;}
-  el.innerHTML=S.transporters.map(t=>{
-    const whs=S.warehouses.filter(w=>S.whTransporterMap[w.code]===t.id);
-    return `<div style="background:var(--surface2);border:1px solid ${t.color}33;border-radius:6px;padding:9px 10px;margin-bottom:6px">
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
-        <span class="cdot" style="background:${t.color}"></span>
-        <span style="font-size:12px;font-weight:600">${t.name}</span>
-        ${t.company?`<span style="font-size:10px;color:var(--muted)">${t.company}</span>`:''}
-      </div>
-      ${t.contact?`<div style="font-size:10px;color:var(--muted)">👤 ${t.contact}</div>`:''}
-      <div style="font-size:10px;color:var(--muted)">📞 ${t.phone||'—'} ${t.altPhone?'/ '+t.altPhone:''}</div>
-      ${t.vehicleType?`<div style="font-size:10px;color:var(--muted)">🚛 ${t.vehicleType} ${t.vehicleNo?'· '+t.vehicleNo:''}</div>`:''}
-      <div style="font-size:10px;margin-top:4px">
-        ${whs.length?whs.map(w=>`<span class="badge t" style="font-size:9px;margin-right:3px">${w.name}</span>`).join(''):'<span style="color:var(--muted)">No warehouses mapped</span>'}
-      </div>
-      <div style="margin-top:5px;display:flex;gap:5px">
-        <button class="btn btn-xs btn-s" onclick="openTrModal('${t.id}')">Edit</button>
-        <button class="btn btn-xs btn-s" onclick="openWHTrMapModal()">Map WH</button>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-// ==================== WAREHOUSE MODAL ====================
-function openWHModal(id){
-  const wh=id?S.warehouses.find(w=>w.id===id):null;
-  document.getElementById('mWHt').textContent=wh?'Edit Warehouse':'Add Warehouse';
-  document.getElementById('mWHb').innerHTML=`
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px">
-      <div class="fg"><label>Site Code *</label><input id="ww1" value="${wh?.code||''}"></div>
-      <div class="fg"><label>Name *</label><input id="ww2" value="${wh?.name||''}"></div>
-    </div>
-    <div class="fg" style="margin-bottom:9px"><label>Address</label><input id="ww3" value="${wh?.address||''}"></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px">
-      <div class="fg"><label>Receiving Email</label><input id="ww4" value="${wh?.email||''}"></div>
-      <div class="fg"><label>Contact Person</label><input id="ww5" value="${wh?.contact||''}"></div>
-    </div>
-    <div style="display:flex;gap:8px;margin-top:4px">
-      <button class="btn btn-p" onclick="saveWH('${id||''}')">Save</button>
-      <button class="btn btn-s" onclick="cm('mWH')">Cancel</button>
-      ${id?`<button class="btn btn-d" onclick="delWH('${id}')">Delete</button>`:''}
-    </div>`;
-  document.getElementById('mWH').classList.remove('hidden');
-}
-function saveWH(id){
-  const code=document.getElementById('ww1').value.trim(),name=document.getElementById('ww2').value.trim();
-  if(!code||!name)return alert('Code and Name required');
-  const d={code,name,address:document.getElementById('ww3').value,email:document.getElementById('ww4').value,contact:document.getElementById('ww5').value};
-  if(id){const w=S.warehouses.find(w=>w.id===id);if(w)Object.assign(w,d);}
-  else{if(S.warehouses.find(w=>w.code===code))return alert('Code exists');S.warehouses.push({id:'WH'+Date.now(),...d});}
-  cm('mWH');refreshAll();
-}
-function delWH(id){if(!confirm('Delete?'))return;S.warehouses=S.warehouses.filter(w=>w.id!==id);cm('mWH');refreshAll();}
-
-// ==================== ASSIGN MODAL (entry point) ====================
-function openAssignModal(){
-  if(!S.pos.length){alert('No POs loaded.');return;}
-  if(!S.suppliers.length){
-    if(confirm('No suppliers added yet. Add a supplier first?')){openSupModal(null);}
-    return;
-  }
-  // Reset modal title
-  const titleEl=document.querySelector('#mAssign .modal-title');
-  if(titleEl) titleEl.textContent='🔗 Assign POs → Suppliers';
-  // Show all SKUs (mapped + unmapped) for review/editing
-  const allSKUs=[...new Set(S.pos.map(p=>p.article||'Unknown'))];
-  openSkuMapModal(allSKUs.filter(art=>!S.skuSupplierMap[art]).length>0
-    ? allSKUs.filter(art=>!S.skuSupplierMap[art])   // show unmapped first
-    : allSKUs   // all mapped - open in edit/review mode
-  );
-}
-
-// ==================== HELPERS ====================
-function updReason(id,v){const p=S.pos.find(p=>p.id===id);if(p)p.delayReason=v;}
-function renderPOList(){
-  const el=document.getElementById('poListEl');if(!el)return;
-  if(!S.pos.length){el.innerHTML='<p style="color:var(--muted);font-size:10px;text-align:center;padding:10px">No POs loaded</p>';return;}
-  el.innerHTML=S.pos.map(p=>{
-    const ov=isOverdue(p.extDate||p.apptDate||p.deliveryDate);const dl=isDelayed(p);const sup=S.suppliers.find(s=>s.id===p.supplierId);
-    return `<div class="poi">
-      <div style="flex:1;min-width:0;cursor:pointer" onclick="openPOModal('${p.id}',{})">
-        <div class="poi-id">PO# ${p.poNum}</div>
-        <div class="poi-desc">${p.description||p.article||'—'}</div>
-        <div class="poi-meta">
-          <span class="badge" style="font-size:9px">${(p.qty||0).toLocaleString('en-IN')} pcs</span>
-          ${ov?'<span class="badge r" style="font-size:9px">OVD</span>':dl?'<span class="badge o" style="font-size:9px">DLY</span>':''}
-          ${!p.supplierId?'<span class="badge p" style="font-size:9px">?sup</span>':''}
-          ${sup?`<span style="font-size:9px;padding:1px 5px;border-radius:3px;background:${sup.color}18;color:${sup.color}">${sup.name.split(' ')[0]}</span>`:''}
-        </div>
-      </div>
-      <button class="poi-rm" onclick="event.stopPropagation();removePO('${p.id}')" title="Remove PO">✕</button>
-    </div>`;
-  }).join('');
-}
-function removePO(id){S.pos=S.pos.filter(p=>p.id!==id);refreshAll();}
-function renderSupList(){
-  const el=document.getElementById('supListEl');if(!el)return;
-  const STAGE_ICONS={yarn:'🧶',dyeing:'🎨',fabric:'🪡',cutting:'✂️',stitching:'🧵',packing:'📦',ready:'✅'};
-  let allProd={};
-  try{allProd=JSON.parse(localStorage.getItem('electroDispatch_allProduction')||'{}');}catch(e){}
-  el.innerHTML=S.suppliers.map(s=>{
-    const c=S.pos.filter(p=>p.supplierId===s.id).length;
-    const arts=[...new Set(S.pos.filter(p=>p.supplierId===s.id).map(p=>p.article||'?'))];
-    const prod=allProd[s.id];
-    return `<div style="background:var(--surface2);border:1px solid ${s.color}33;border-radius:6px;padding:9px 10px;margin-bottom:6px">
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
-        <span class="cdot" style="background:${s.color}"></span>
-        <span style="font-size:12px;font-weight:600">${s.name}</span>
-      </div>
-      <div style="font-size:10px;color:var(--muted)">${s.city||'—'} ${s.phone?'· '+s.phone:''}</div>
-      ${s.address?`<div style="font-size:10px;color:var(--muted)">📍 ${s.address}</div>`:''}
-      <div style="font-size:10px;margin-top:4px">${c} POs · Articles: ${arts.length?arts.map(a=>`<span class="badge t" style="font-size:9px">${a}</span>`).join(' '):'none'}</div>
-      ${prod?`<div style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">
-        <div style="font-size:9px;font-family:var(--font-m);color:var(--muted);margin-bottom:4px">PRODUCTION UPDATE</div>
-        ${Object.entries(prod.status||{}).map(([art,st])=>{
-          const tq=S.pos.filter(p=>p.supplierId===s.id&&(p.article||'Unknown')===art).reduce((a,p)=>a+p.qty,0);
-          const pct=tq>0?Math.min(100,Math.round(parseInt(st.ready||0)/tq*100)):0;
-          const icons=Object.entries(STAGE_ICONS).filter(([k])=>parseInt(st[k]||0)>0).map(([k])=>STAGE_ICONS[k]).join('');
-          return `<div style="margin-bottom:5px">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
-              <span style="font-size:10px;font-family:var(--font-m);color:var(--accent)">${art}</span>
-              <span style="font-size:9px;color:var(--muted)">${icons} ${pct}% ready</span>
-            </div>
-            <div style="height:4px;background:var(--surface3);border-radius:2px;overflow:hidden">
-              <div style="width:${pct}%;height:100%;background:${pct>=100?'var(--green)':s.color};border-radius:2px"></div>
-            </div>
-          </div>`;
-        }).join('')}
-        <div style="font-size:9px;color:var(--muted);margin-top:3px">Updated: ${new Date(prod.updatedAt||0).toLocaleDateString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
-      </div>`:`<div style="font-size:9px;color:var(--muted);margin-top:5px;font-style:italic">No production update yet</div>`}
-      <div style="margin-top:5px;display:flex;gap:5px">
-        <button class="btn btn-xs btn-s" onclick="openSupModal('${s.id}')">Edit</button>
-      </div>
-    </div>`;
-  }).join('')||'<p style="color:var(--muted);font-size:10px">No suppliers yet. Add suppliers to assign POs.</p>';
-}
-function renderWHList(){
-  const el=document.getElementById('whListEl');if(!el)return;
-  el.innerHTML=S.warehouses.map(w=>{
-    const c=S.pos.filter(p=>p.site===w.code).length;
-    return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:9px 10px;margin-bottom:6px">
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
-        <span class="mono acc" style="font-size:10px">${w.code}</span>
-        <span style="font-size:12px;font-weight:600">${w.name}</span>
-      </div>
-      ${w.address?`<div style="font-size:10px;color:var(--muted)">📍 ${w.address}</div>`:''}
-      ${w.email?`<div style="font-size:10px;color:var(--muted)">✉️ ${w.email}</div>`:''}
-      <div style="font-size:10px;margin-top:3px">${c} POs pending</div>
-      <div style="margin-top:5px;display:flex;gap:5px">
-        <button class="btn btn-xs btn-s" onclick="openWHModal('${w.id}')">Edit</button>
-      </div>
-    </div>`;
-  }).join('');
-}
+function buildAIContext(){return '';}
 
 // ==================== STORAGE (localStorage) ====================
 function saveToStorage(){
-  try{
-    localStorage.setItem('electroDispatch_state',JSON.stringify({
-      pos:S.pos,warehouses:S.warehouses,suppliers:S.suppliers,
-      skuSupplierMap:S.skuSupplierMap,transporters:S.transporters,
-      whTransporterMap:S.whTransporterMap
-    }));
-    showSyncStatus('✓ Saved');
-  }catch(e){showSyncStatus('⚠️ Save failed','error');}
+  api('PUT','/state',{
+    pos:S.pos,warehouses:S.warehouses,suppliers:S.suppliers,
+    skuSupplierMap:S.skuSupplierMap,transporters:S.transporters,
+    whTransporterMap:S.whTransporterMap,lrRecords:S.lrRecords
+  }).then(()=>showSyncStatus('✓ Saved')).catch(()=>showSyncStatus('⚠️ Save failed','error'));
 }
 
 function showSyncStatus(msg,type='ok'){
@@ -2011,40 +2090,27 @@ function showSyncStatus(msg,type='ok'){
   el._t=setTimeout(()=>{el.textContent='● Local';el.style.color='var(--muted)';},2000);
 }
 
-function loadFromStorage(){
+async function loadFromStorage(){
   try{
-    const raw=localStorage.getItem('electroDispatch_state');
-    if(!raw)return false;
-    const d=JSON.parse(raw);
+    const d = await api('GET','/state');
     if(d.pos)S.pos=d.pos;
     if(d.warehouses&&d.warehouses.length)S.warehouses=d.warehouses;
     if(d.suppliers)S.suppliers=d.suppliers;
     if(d.skuSupplierMap)S.skuSupplierMap=d.skuSupplierMap;
     if(d.transporters)S.transporters=d.transporters;
     if(d.whTransporterMap)S.whTransporterMap=d.whTransporterMap;
+    if(d.lrRecords)S.lrRecords=d.lrRecords;
     return true;
-  }catch(e){return false;}
+  }catch(e){ return false; }
 }
 
-function mergeSupplierUpdates(){
-  try{
-    const raw=localStorage.getItem('electroDispatch_supplierUpdates');
-    if(!raw)return;
-    const updates=JSON.parse(raw);
-    updates.forEach(u=>{
-      const po=S.pos.find(p=>p.id===u.poId);
-      if(po){
-        if(u.apptDate!==undefined)po.apptDate=u.apptDate;
-        if(u.extDate!==undefined)po.extDate=u.extDate;
-        if(u.delayReason!==undefined)po.delayReason=u.delayReason;
-        if(u.supplierNote!==undefined)po.supplierNote=u.supplierNote;
-      }
-    });
-  }catch(e){}
+async function mergeSupplierUpdates(){
+  // Supplier updates are now applied server-side immediately
+  // Just reload the latest state from API
+  try{ await loadFromStorage(); }catch(e){}
 }
 
-function refreshAll(){
-  mergeSupplierUpdates();
+async function refreshAll(){
   saveToStorage();
   renderPanel();
   if(S.tab==='dashboard')renderDashboard();
@@ -2053,24 +2119,27 @@ function refreshAll(){
   else if(S.tab==='ai'){/* preserve chat */}
   else if(S.tab==='timeline')renderTimeline();
   if(S.panelTab==='tr')renderTrList();
+  if(S.tab==='lr')renderLR();
 }
 
 // ==================== PASSWORD PROTECTION ====================
-const PLANNER_PASSWORD = 'electro2026'; // ← CHANGE THIS TO YOUR PASSWORD
-
-function checkPW(){
+async function checkPW(){
   const val = document.getElementById('pwInput').value;
   const inp = document.getElementById('pwInput');
   const err = document.getElementById('pwErr');
-  if(val === PLANNER_PASSWORD){
-    sessionStorage.setItem('ea_auth','1');
+  err.textContent = '';
+  inp.disabled = true;
+  try{
+    const r = await api('POST','/auth/planner',{password:val});
+    setToken(r.token);
     document.getElementById('pwScreen').style.display='none';
     initApp();
-  } else {
+  }catch(e){
     err.textContent = '✕ Wrong password — try again';
     inp.value = '';
+    inp.disabled = false;
     inp.classList.remove('shake');
-    void inp.offsetWidth; // trigger reflow
+    void inp.offsetWidth;
     inp.classList.add('shake');
     setTimeout(()=>inp.classList.remove('shake'),500);
   }
@@ -2079,8 +2148,8 @@ function checkPW(){
 // ==================== INIT ====================
 document.getElementById('hdate').textContent=new Date().toLocaleDateString('en-IN',{weekday:'short',day:'2-digit',month:'short',year:'numeric'}).toUpperCase();
 
-function initApp(){
-  const restored=loadFromStorage();
+async function initApp(){
+  const restored=await loadFromStorage();
   if(!restored){
     S.pos=[
       {id:'PO1',poNum:'5002640623',article:'600081154',description:'TSHIRT BOY BSC GPC PRT 2-7Y@79',qty:7920,deliveryDate:'2026-03-01',site:'1036',supplierId:'',apptDate:'2026-03-07',extDate:'',delayReason:'',mrp:'79',price:'59'},
@@ -2099,19 +2168,35 @@ function initApp(){
       {id:'PO14',poNum:'5002738252',article:'600081292',description:'TSHIRT BOY BSC GPC PT 8-14Y@99',qty:4752,deliveryDate:'2026-03-20',site:'1093',supplierId:'',apptDate:'2026-03-23',extDate:'',delayReason:'',mrp:'99',price:''},
     ];
   }
-  mergeSupplierUpdates();
-  saveToStorage();
+  await mergeSupplierUpdates();
   renderDashboard();
   renderPanel();
 }
 
-// Check if already authenticated this session
-if(sessionStorage.getItem('ea_auth')==='1'){
-  document.getElementById('pwScreen').style.display='none';
-  initApp();
-} else {
-  setTimeout(()=>document.getElementById('pwInput').focus(),100);
-}
+// Check if already have a valid token
+(async()=>{
+  const token = getToken();
+  if(token){
+    try{
+      await api('GET','/auth/verify');
+      document.getElementById('pwScreen').style.display='none';
+      initApp();
+    }catch(e){
+      sessionStorage.removeItem('ea_token');
+      setTimeout(()=>document.getElementById('pwInput').focus(),100);
+    }
+  } else {
+    setTimeout(()=>document.getElementById('pwInput').focus(),100);
+  }
+})();
+
 </script>
+
+<div class="moverlay hidden" id="mLR">
+  <div class="modal" style="width:600px;max-height:90vh;overflow-y:auto">
+    <div class="modal-title" id="mLRt">Add LR Entry</div>
+    <div id="mLRb"></div>
+  </div>
+</div>
 </body>
 </html>

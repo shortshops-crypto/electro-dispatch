@@ -207,16 +207,21 @@ function fd(v){const d=pd(v);if(!d)return '—';return d.toLocaleDateString('en-
 function tid(v){const d=pd(v);if(!d||isNaN(d))return '';return d.toISOString().split('T')[0];}
 function ddiff(a,b){const da=pd(a),db=pd(b);if(!da||!db)return null;return Math.round((da-db)/(864e5));}
 function isOverdue(v){const d=pd(v);if(!d)return false;return d<new Date();}
+function dispatchDeadline(p){
+  const d=pd(p.deliveryDate);if(!d)return null;
+  const days=p.site==='1093'?2:3;
+  return new Date(d.getTime()-days*864e5);
+}
+function dispatchDaysLabel(p){return p.site==='1093'?'2':'3';}
 function isDelayed(p){const del=pd(p.deliveryDate);const eff=pd(p.extDate||p.apptDate);if(!del||!eff)return false;return eff>del;}
 function getMonthKey(p){const d=pd(p.extDate||p.apptDate||p.deliveryDate);if(!d)return 'Unknown';return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
 function getMonthLabel(k){if(k==='Unknown')return k;const[y,m]=k.split('-');return MONTHS[+m-1]+' '+y;}
 
 // ===== LOAD DATA =====
-function loadMasterState(){
+async function loadMasterState(){
   try{
-    const raw=localStorage.getItem('electroDispatch_state');
-    if(!raw)return null;
-    return JSON.parse(raw);
+    const d=await supApi('GET','/state');
+    return d||null;
   }catch(e){return null;}
 }
 
@@ -234,28 +239,23 @@ function applyPendingUpdates(state){
   });
 }
 
-function saveUpdate(poId,fields){
-  pendingUpdates=pendingUpdates.filter(u=>u.poId!==poId);
-  pendingUpdates.push({poId,...fields,ts:Date.now()});
+async function saveUpdate(poId,fields){
   try{
-    const existing=JSON.parse(localStorage.getItem('electroDispatch_supplierUpdates')||'[]');
-    const merged=existing.filter(u=>u.poId!==poId);
-    merged.push({poId,...fields,ts:Date.now()});
-    localStorage.setItem('electroDispatch_supplierUpdates',JSON.stringify(merged));
-  }catch(e){}
+    await supApi('POST','/supplier-updates',{poId,supplierId:currentSupplier?.id,...fields});
+  }catch(e){console.error('saveUpdate error:',e);}
 }
 
-function refreshData(){
-  masterState=loadMasterState();
+async function refreshData(){
+  masterState=await loadMasterState();
   if(masterState)applyPendingUpdates(masterState);
   renderCurrentTab();
   showToast('✓ Data refreshed');
 }
 
 // ===== LOGIN =====
-function renderLogin(){
+async function renderLogin(){
   const list=document.getElementById('supList');
-  masterState=loadMasterState();
+  masterState=await loadMasterState();
   if(!masterState||!masterState.suppliers||!masterState.suppliers.length){
     list.innerHTML=`<div class="no-sup">⚠️ No suppliers found.<br>Open the main planner, add suppliers, then reload this page.</div>`;
     return;
@@ -422,6 +422,10 @@ function renderMyPOs(){
           <span style="color:var(--red)">${fd(p.deliveryDate)}</span>
         </div>
         <div class="po-meta-item">
+          <span class="po-meta-lbl">Dispatch Deadline</span>
+          <span style="color:var(--green);font-weight:600">${fd(dispatchDeadline(p))}</span>
+        </div>
+        <div class="po-meta-item">
           <span class="po-meta-lbl">Your Appt. Date</span>
           <span style="color:${dl?'var(--orange)':'var(--accent2)'}">${fd(p.apptDate)||'Not set'}</span>
         </div>
@@ -445,6 +449,17 @@ function renderMyPOs(){
           </div>
           <div style="display:flex;align-items:flex-end;padding-bottom:1px">
             <button class="btn btn-s" style="font-size:10px;padding:6px 10px;white-space:nowrap" onclick="aiAutoFillDate('${p.id}','${p.article||''}',${p.qty},'${p.deliveryDate}')">🤖 AI Suggest Date</button>
+          </div>
+        </div>
+        <div class="edit-row" style="background:rgba(34,197,94,.06);border:1px solid rgba(34,197,94,.2);border-radius:7px;padding:10px 12px;margin-bottom:10px">
+          <div class="fg">
+            <label style="color:var(--green);font-weight:600">📤 Your Dispatch Date <span style="font-size:10px;font-weight:400;color:var(--muted)">(goods must leave your warehouse)</span></label>
+            <input type="date" id="supdisp-${p.id}" value="${tid(p.supplierDispatchDate)}" style="border-color:rgba(34,197,94,.4)">
+            <div style="font-size:10px;margin-top:4px">
+              <span style="color:var(--muted)">Must dispatch by: </span>
+              <strong style="color:var(--accent)" id="ddln-${p.id}"></strong>
+              <span style="color:var(--muted);margin-left:6px">(${dispatchDaysLabel(p)} days before PO expected date, Site ${p.site})</span>
+            </div>
           </div>
         </div>
         <div id="delayWarn-${p.id}" style="display:none" class="delay-warn">
@@ -477,7 +492,11 @@ function renderMyPOs(){
   }).join('');
 
   // Run delay checks for all POs
-  sorted.forEach(p=>checkDelay(p.id));
+  sorted.forEach(p=>{
+    checkDelay(p.id);
+    const ddlnEl=document.getElementById('ddln-'+p.id);
+    if(ddlnEl){const ddln=dispatchDeadline(p);ddlnEl.textContent=ddln?fd(ddln):'—';}
+  });
 }
 
 function checkDelay(poId){
@@ -501,7 +520,7 @@ function checkDelay(poId){
   }
 }
 
-function savePOUpdate(poId){
+async function savePOUpdate(poId){
   const apptEl=document.getElementById('appt-'+poId);
   const extEl=document.getElementById('ext-'+poId);
   const reasonEl=document.getElementById('reason-'+poId);
@@ -533,7 +552,7 @@ function savePOUpdate(poId){
     const idx=masterState.pos.findIndex(p=>p.id===poId);
     if(idx>=0)Object.assign(masterState.pos[idx],fields);
   }
-  saveUpdate(poId,fields);
+  await saveUpdate(poId,fields);
 
   // Show confirmation
   if(confirmEl){confirmEl.style.display='block';setTimeout(()=>confirmEl.style.display='none',3000);}
@@ -611,21 +630,18 @@ const STAGES=[
   {key:'ready',  label:'Ready',    icon:'✅', color:'#22c55e'},
 ];
 
-// Load production status from localStorage
-function loadProductionStatus(){
+// Load production status from API
+async function loadProductionStatus(){
   try{
-    const raw=localStorage.getItem('electroDispatch_production_'+currentSupplier?.id);
-    return raw?JSON.parse(raw):{};
+    const d=await supApi('GET','/production/'+currentSupplier?.id);
+    return d&&Object.keys(d).length?d:{};
   }catch(e){return {};}
 }
-// Save production status to localStorage
-function saveProductionStatus(status){
+// Save production status to API
+async function saveProductionStatus(status){
   try{
-    localStorage.setItem('electroDispatch_production_'+currentSupplier?.id,JSON.stringify(status));
-    const all=JSON.parse(localStorage.getItem('electroDispatch_allProduction')||'{}');
-    all[currentSupplier.id]={supplierId:currentSupplier.id,supplierName:currentSupplier.name,status,updatedAt:new Date().toISOString()};
-    localStorage.setItem('electroDispatch_allProduction',JSON.stringify(all));
-  }catch(e){}
+    await supApi('PUT','/production/'+currentSupplier?.id, status);
+  }catch(e){console.error('saveProductionStatus error:',e);}
 }
 
 function renderProduction(){
@@ -871,19 +887,30 @@ function renderSummary(){
 }
 
 // ===== AI HELPERS =====
-const SUP_AI_MODEL='claude-sonnet-4-20250514';
 const SUP_AI_API='https://super-haze-a51c.short-shops.workers.dev/';
-async function callSupAI(system,user,maxTokens=400){
-  const resp=await fetch(SUP_AI_API,{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({model:SUP_AI_MODEL,max_tokens:maxTokens,
-      system,messages:[{role:'user',content:user}]})
-  });
-  const d=await resp.json();
-  return d.content?.find(c=>c.type==='text')?.text||'';
-}
 
+// ── API CONFIG ──
+const API_BASE = 'https://electro-backend-divk.onrender.com/api';
+let _supToken = sessionStorage.getItem('sup_token');
+async function supApi(method, path, body){
+  const opts={method,headers:{'Content-Type':'application/json'}};
+  if(_supToken) opts.headers['Authorization']='Bearer '+_supToken;
+  if(body) opts.body=JSON.stringify(body);
+  const r=await fetch(API_BASE+path,opts);
+  if(!r.ok){const e=await r.json().catch(()=>({}));throw new Error(e.error||r.statusText);}
+  return r.json();
+}
+async function callSupAI(system,user,maxTokens=400){
+  try{
+    const r=await fetch(SUP_AI_API,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:maxTokens,
+        system,messages:[{role:'user',content:user}]})
+    });
+    const d=await r.json();
+    return d.content?.[0]?.text||'';
+  }catch(e){console.error('AI error:',e);return '';}
+}
 function getStageDataForSKU(article){
   const prodStatus=loadProductionStatus();
   const st=prodStatus[article]||{};
