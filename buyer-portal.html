@@ -163,7 +163,7 @@ function dispatchDeadline(p){
 // ── STATE ───────────────────────────────────────────────────────
 let state={pos:[],warehouses:[],suppliers:[],transporters:[],lrRecords:[]};
 
-const API_BASE = 'https://electro-backend-divk.onrender.com/api';
+const API_BASE = 'https://electro-backend-production.up.railway.app/api';
 async function bApi(path){
   const r=await fetch(API_BASE+path);
   if(!r.ok)throw new Error(r.statusText);

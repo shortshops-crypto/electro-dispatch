@@ -1867,7 +1867,7 @@ const AI_MODEL='claude-sonnet-4-20250514';
 const AI_API='https://super-haze-a51c.short-shops.workers.dev/';
 
 // ==================== API CONFIG ====================
-const API_BASE = 'https://electro-backend-divk.onrender.com/api';
+const API_BASE = 'https://electro-backend-production.up.railway.app/api';
 
 function getToken(){ return sessionStorage.getItem('ea_token'); }
 function setToken(t){ sessionStorage.setItem('ea_token', t); }
@@ -2073,8 +2073,8 @@ function openAIChat(q){
 function buildAIContext(){return '';}
 
 // ==================== STORAGE (localStorage) ====================
-function saveToStorage(){
-  api('PUT','/state',{
+async function saveToStorage(){
+  return api('PUT','/state',{
     pos:S.pos,warehouses:S.warehouses,suppliers:S.suppliers,
     skuSupplierMap:S.skuSupplierMap,transporters:S.transporters,
     whTransporterMap:S.whTransporterMap,lrRecords:S.lrRecords
@@ -2111,7 +2111,7 @@ async function mergeSupplierUpdates(){
 }
 
 async function refreshAll(){
-  saveToStorage();
+  await saveToStorage();
   renderPanel();
   if(S.tab==='dashboard')renderDashboard();
   else if(S.tab==='dispatch')renderDispatch();
