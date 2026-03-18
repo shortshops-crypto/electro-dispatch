@@ -1229,7 +1229,7 @@ function buildDispatchCards(){
 function clearF(){['fWH','fSup','fStatus'].forEach(i=>{const el=document.getElementById(i);if(el)el.value='';});const fd2=document.getElementById('fDate');if(fd2)fd2.value='';buildDispatchCards();}
 
 // ==================== MISSING HELPERS ====================
-function getUnmappedWHs(){return S.warehouses.filter(w=>!S.whTransporterMap[w.code]);}
+function getUnmappedWHs(){return S.warehouses.filter(w=>w&&w.code&&!S.whTransporterMap[w.code]);}
 
 function renderTimeline(){
   const el=document.getElementById('view-timeline');
@@ -2093,13 +2093,13 @@ function showSyncStatus(msg,type='ok'){
 async function loadFromStorage(){
   try{
     const d = await api('GET','/state');
-    if(d.pos)S.pos=d.pos;
-    if(d.warehouses&&d.warehouses.length)S.warehouses=d.warehouses;
-    if(d.suppliers)S.suppliers=d.suppliers;
+    if(d.pos)S.pos=d.pos.filter(x=>x&&x.id);
+    if(d.warehouses&&d.warehouses.length)S.warehouses=d.warehouses.filter(x=>x&&x.code);
+    if(d.suppliers)S.suppliers=d.suppliers.filter(x=>x&&x.id);
     if(d.skuSupplierMap)S.skuSupplierMap=d.skuSupplierMap;
-    if(d.transporters)S.transporters=d.transporters;
+    if(d.transporters)S.transporters=d.transporters.filter(x=>x&&x.id);
     if(d.whTransporterMap)S.whTransporterMap=d.whTransporterMap;
-    if(d.lrRecords)S.lrRecords=d.lrRecords;
+    if(d.lrRecords)S.lrRecords=d.lrRecords.filter(x=>x&&x.id);
     return true;
   }catch(e){ return false; }
 }
