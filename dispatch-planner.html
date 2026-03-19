@@ -331,7 +331,7 @@ let S={
 
 // ==================== DATE UTILS ====================
 function pd(v){if(!v)return null;if(v instanceof Date)return isNaN(v)?null:v;const s=String(v).trim();const m1=s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);if(m1)return new Date(+m1[3],+m1[2]-1,+m1[1]);const m2=s.match(/^(\d{4})-(\d{2})-(\d{2})$/);if(m2)return new Date(+m2[1],+m2[2]-1,+m2[3]);const d=new Date(s);return isNaN(d)?null:d;}
-function fd(v){const d=pd(v);if(!d)return '—';return d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});}
+function fd(v){const d=pd(v);if(!d)return '—';const dd=String(d.getDate()).padStart(2,'0');const mm=String(d.getMonth()+1).padStart(2,'0');const yy=String(d.getFullYear()).slice(2);return dd+'-'+mm+'-'+yy;}
 function tid(v){const d=pd(v);if(!d||isNaN(d))return '';return d.toISOString().split('T')[0];}
 function ddiff(a,b){const da=pd(a),db=pd(b);if(!da||!db)return null;return Math.round((da-db)/(864e5));}
 function isOverdue(v){const d=pd(v);if(!d)return false;return d<new Date();}
