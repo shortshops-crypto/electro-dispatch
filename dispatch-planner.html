@@ -1863,7 +1863,7 @@ function deleteLR(id){
 
 
 // ==================== AI ENGINE ====================
-const AI_MODEL='claude-sonnet-4-20250514';
+const AI_MODEL='claude-sonnet-4-5';
 const AI_API='https://super-haze-a51c.short-shops.workers.dev/';
 
 // ==================== API CONFIG ====================
@@ -1891,7 +1891,9 @@ async function aiPost(bodyObj){
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify(bodyObj)
   });
-  return await resp.json();
+  const data=await resp.json();
+  if(data.error){console.error('AI API error:',data.error);throw new Error(data.error.message||'AI error');}
+  return data;
 }
 
 async function callAI(systemPrompt,userMsg,maxTokens=1200){
@@ -2062,7 +2064,7 @@ async function sendAI(){
     typing.innerHTML=`<div style="background:var(--surface2);border:1px solid var(--border);border-radius:2px 10px 10px 10px;padding:8px 12px;max-width:85%;font-size:12px;line-height:1.6">${text}</div>`;
     S_aiHistory.push({role:'assistant',content:text});
   }catch(e){
-    typing.textContent='⚠️ Could not connect to AI.';
+    typing.textContent='⚠️ AI error: '+e.message;
   }
   msgs.scrollTop=msgs.scrollHeight;
 }
