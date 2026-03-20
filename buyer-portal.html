@@ -354,9 +354,9 @@ function exportExcel(){
     rows.push([
       p.poNum,(p.qty||0),
       whName(p.site),
-      p.deliveryDate||'',p.apptDate||p.extDate||'',
-      ddln?tid(ddln):'',
-      lr&&lr.dispatchDate?lr.dispatchDate:'',
+      fd(p.deliveryDate),fd(p.apptDate||p.extDate),
+      ddln?fd(ddln):'',
+      lr&&lr.dispatchDate?fd(lr.dispatchDate):'',
       lr?lr.lrNumber:'',
       lr&&lr.grnDate?lr.grnDate:'',
       stTxt,grnTxt,p.delayReason||''
@@ -401,12 +401,12 @@ function exportPDF(){
       +'<td>'+p.poNum+'</td>'
       +'<td style="text-align:right">'+(p.qty||0).toLocaleString('en-IN')+'</td>'
       +'<td>'+(whName(p.site))+'</td>'
-      +'<td>'+(p.deliveryDate||'—')+'</td>'
-      +'<td>'+(p.apptDate||p.extDate||'—')+'</td>'
-      +'<td>'+(ddln?tid(ddln):'—')+'</td>'
-      +'<td>'+(lr&&lr.dispatchDate?lr.dispatchDate:'—')+'</td>'
+      +'<td>'+fd(p.deliveryDate)+'</td>'
+      +'<td>'+fd(p.apptDate||p.extDate)+'</td>'
+      +'<td>'+(ddln?fd(ddln):'—')+'</td>'
+      +'<td>'+(lr&&lr.dispatchDate?fd(lr.dispatchDate):'—')+'</td>'
       +'<td style="font-family:monospace">'+(lr?lr.lrNumber:'—')+'</td>'
-      +'<td>'+(lr&&lr.grnDate?lr.grnDate:'—')+'</td>'
+      +'<td>'+(lr&&lr.grnDate?fd(lr.grnDate):'—')+'</td>'
       +'<td style="color:'+stColor+';font-weight:700">'+stTxt+'</td>'
       +'<td style="color:'+grnColor+'">'+grnTxt+'</td>'
       +'<td style="font-size:9px;color:#666">'+(p.delayReason||'—')+'</td>'
