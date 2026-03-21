@@ -309,7 +309,8 @@ async function renderPortal(){
       +'<td>'+(p.qty||0).toLocaleString('en-IN')+' pcs</td>'
       +'<td>'+(whName(p.site))+'</td>'
       +'<td style="color:var(--red)">'+fd(p.deliveryDate)+'</td>'
-      +'<td style="color:var(--accent2)">'+fd(p.apptDate||p.extDate)+'</td>'
+      +'<td style="color:var(--accent2)">'+fd(p.apptDate)+'</td>'
+      +'<td style="color:var(--orange)">'+fd(p.extDate)+'</td>'
       +'<td>'+(ddln?fd(ddln):'—')+'</td>'
       +'<td>'+(lr&&lr.dispatchDate?fd(lr.dispatchDate):'—')+'</td>'
       +'<td style="font-family:var(--font-m)">'+(lr?lr.lrNumber:'—')+'</td>'
@@ -324,7 +325,7 @@ async function renderPortal(){
     '<table>'
     +'<thead><tr>'
     +'<th>PO Number</th><th>Qty</th><th>Warehouse</th>'
-    +'<th>PO Exp. Date</th><th>Appt Date</th><th>Dispatch Deadline</th>'
+    +'<th>PO Exp. Date</th><th>Appt Date</th><th>Extension Date</th><th>Dispatch Deadline</th>'
     +'<th>Dispatched On</th><th>LR Number</th><th>GRN Date</th>'
     +'<th>Delivery Status</th><th>GRN Status</th><th>Delay Reason</th>'
     +'</tr></thead>'
@@ -336,7 +337,7 @@ async function renderPortal(){
 function exportExcel(){
   const pos=state.pos.filter(p=>p.article===currentSku);
   const sorted=[...pos].sort((a,b)=>(pd(a.extDate||a.apptDate||a.deliveryDate)||0)-(pd(b.extDate||b.apptDate||b.deliveryDate)||0));
-  const rows=[['PO Number','Qty (pcs)','Warehouse','PO Expected Date','Appointment Date','Dispatch Deadline','Dispatched On','LR Number','GRN Date','Delivery Status','GRN Status','Delay Reason']];
+  const rows=[['PO Number','Qty (pcs)','Warehouse','PO Expected Date','Appointment Date','Extension Date','Dispatch Deadline','Dispatched On','LR Number','GRN Date','Delivery Status','GRN Status','Delay Reason']];
   sorted.forEach(function(p){
     var wh=state.warehouses.find(function(w){return w.code===p.site;});
     var lr=state.lrRecords.find(function(r){return r.poId===p.id;});
@@ -354,7 +355,7 @@ function exportExcel(){
     rows.push([
       p.poNum,(p.qty||0),
       whName(p.site),
-      fd(p.deliveryDate),fd(p.apptDate||p.extDate),
+      fd(p.deliveryDate),fd(p.apptDate),fd(p.extDate),
       ddln?fd(ddln):'',
       lr&&lr.dispatchDate?fd(lr.dispatchDate):'',
       lr?lr.lrNumber:'',
@@ -363,7 +364,7 @@ function exportExcel(){
     ]);
   });
   const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols']=[13,10,22,14,14,14,13,14,12,12,18,22].map(function(w){return{wch:w};});
+  ws['!cols']=[13,10,22,14,14,14,14,13,14,12,12,18,22].map(function(w){return{wch:w};});
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'PO Status');
   XLSX.writeFile(wb,'ElectroApparels_Buyer_'+currentSku+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
@@ -402,7 +403,8 @@ function exportPDF(){
       +'<td style="text-align:right">'+(p.qty||0).toLocaleString('en-IN')+'</td>'
       +'<td>'+(whName(p.site))+'</td>'
       +'<td>'+fd(p.deliveryDate)+'</td>'
-      +'<td>'+fd(p.apptDate||p.extDate)+'</td>'
+      +'<td>'+fd(p.apptDate)+'</td>'
+      +'<td>'+fd(p.extDate)+'</td>'
       +'<td>'+(ddln?fd(ddln):'—')+'</td>'
       +'<td>'+(lr&&lr.dispatchDate?fd(lr.dispatchDate):'—')+'</td>'
       +'<td style="font-family:monospace">'+(lr?lr.lrNumber:'—')+'</td>'
@@ -447,6 +449,7 @@ function exportPDF(){
     +'<th style="padding:7px 8px;text-align:left;font-size:9px;text-transform:uppercase">Warehouse</th>'
     +'<th style="padding:7px 8px;text-align:left;font-size:9px;text-transform:uppercase">PO Exp. Date</th>'
     +'<th style="padding:7px 8px;text-align:left;font-size:9px;text-transform:uppercase">Appt Date</th>'
+    +'<th style="padding:7px 8px;text-align:left;font-size:9px;text-transform:uppercase">Ext Date</th>'
     +'<th style="padding:7px 8px;text-align:left;font-size:9px;text-transform:uppercase">Dispatch By</th>'
     +'<th style="padding:7px 8px;text-align:left;font-size:9px;text-transform:uppercase">Dispatched</th>'
     +'<th style="padding:7px 8px;text-align:left;font-size:9px;text-transform:uppercase">LR Number</th>'
