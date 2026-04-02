@@ -864,7 +864,7 @@ function renderDashboard(){
 
     <div class="sec-title" style="margin-top:16px">MASTER PO TABLE</div>
     <div class="tbl-wrap">
-      <table><thead><tr><th>PO #</th><th>Article</th><th>Description</th><th>Qty</th><th>PO Delivery Date</th><th>Planned Dispatch Date</th><th>Delayed?</th><th>Warehouse</th><th>Supplier (from)</th><th>Transporter</th><th>Action</th></tr></thead>
+      <table><thead><tr><th>PO #</th><th>Article</th><th>Description</th><th>Qty</th><th>PO Delivery Date</th><th>Your Dispatch Date</th><th>Delayed?</th><th>Warehouse</th><th>Supplier (from)</th><th>Transporter</th><th>Action</th></tr></thead>
       <tbody id="masterTb"></tbody></table>
     </div>`;
   renderMasterTable();
@@ -1074,7 +1074,7 @@ function renderSKU(){
         <div style="margin-top:8px">
           <div style="font-size:10px;font-family:var(--font-m);color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px">Delayed POs for this SKU</div>
           <div class="tbl-wrap" style="border-radius:5px">
-            <table><thead><tr><th>PO #</th><th>Qty</th><th>PO Delivery Date</th><th>Planned Dispatch Date</th><th>Days Late</th><th>Reason</th><th>Warehouse</th></tr></thead>
+            <table><thead><tr><th>PO #</th><th>Qty</th><th>PO Delivery Date</th><th>Your Dispatch Date</th><th>Days Late</th><th>Reason</th><th>Warehouse</th></tr></thead>
             <tbody>${sku.pos.filter(p=>isDelayed(p)).map(p=>{
               const diff=ddiff(pd(p.extDate||p.apptDate),pd(p.deliveryDate));
               const wh=S.warehouses.find(w=>w.code===p.site);
@@ -1188,7 +1188,7 @@ function buildDispatchCards(){
                 <span class="badge y">${sq.toLocaleString('en-IN')} pcs</span>
               </div>
               <div class="tbl-wrap" style="border-radius:5px">
-                <table><thead><tr><th>PO #</th><th>Article</th><th>Description</th><th>Qty</th><th>MRP</th><th>PO Delivery Date</th><th>Planned Dispatch Date</th><th>Delay</th><th>Reason</th></tr></thead>
+                <table><thead><tr><th>PO #</th><th>Article</th><th>Description</th><th>Qty</th><th>MRP</th><th>PO Delivery Date</th><th>Your Dispatch Date</th><th>Delay</th><th>Reason</th></tr></thead>
                 <tbody>${sps.map(p=>{
                   const st=poStatus(p);const dl=st==='delayed';const gr=st==='grace';
             const diff=(dl||gr)?ddiff(pd(p.extDate||p.apptDate),pd(p.deliveryDate)):0;
@@ -1303,8 +1303,8 @@ function openPOModal(id, pre){
       <div><label style="font-size:11px;color:var(--muted)">Base Price (₹)</label><input id="mp6" value="${pf.price||''}" style="width:100%;margin-top:3px"></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px;margin-bottom:9px">
-      <div><label style="font-size:11px;color:var(--muted)">PO Delivery Date</label><input id="mp7" type="date" value="${tid(pf.deliveryDate)}" style="width:100%;margin-top:3px"></div>
-      <div><label style="font-size:11px;color:var(--muted)">Planned Dispatch Date</label><input id="mp8" type="date" value="${tid(pf.apptDate)}" style="width:100%;margin-top:3px"></div>
+      <div><label style="font-size:11px;color:var(--muted)">PO Delivery Date <span style="font-size:9px;color:var(--muted)">(from PO)</span></label><input id="mp7" type="date" value="${tid(pf.deliveryDate)}" style="width:100%;margin-top:3px" readonly></div>
+      <div><label style="font-size:11px;color:var(--muted)">Your Dispatch Date</label><input id="mp8" type="date" value="${tid(pf.apptDate)}" style="width:100%;margin-top:3px"></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px">
       <div><label style="font-size:11px;color:var(--muted)">Warehouse Site</label><select id="mp10" style="width:100%;margin-top:3px"><option value="">— Select —</option>${whO}</select></div>

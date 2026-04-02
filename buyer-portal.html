@@ -324,7 +324,7 @@ async function renderPortal(){
     '<table>'
     +'<thead><tr>'
     +'<th>PO Number</th><th>Qty</th><th>Warehouse</th>'
-    +'<th>PO Delivery Date</th><th>Planned Dispatch Date</th><th>Dispatch Deadline</th>'
+    +'<th>PO Delivery Date</th><th>Your Dispatch Date</th><th>Dispatch Deadline</th>'
     +'<th>Dispatched On</th><th>LR Number</th><th>GRN Date</th>'
     +'<th>Delivery Status</th><th>GRN Status</th><th>Delay Reason</th>'
     +'</tr></thead>'
@@ -336,7 +336,7 @@ async function renderPortal(){
 function exportExcel(){
   const pos=state.pos.filter(p=>p.article===currentSku);
   const sorted=[...pos].sort((a,b)=>(pd(a.extDate||a.apptDate||a.deliveryDate)||0)-(pd(b.extDate||b.apptDate||b.deliveryDate)||0));
-  const rows=[['PO Number','Qty (pcs)','Warehouse','PO Delivery Date','Planned Dispatch Date','Dispatch Deadline','Dispatched On','LR Number','GRN Date','Delivery Status','GRN Status','Delay Reason']];
+  const rows=[['PO Number','Qty (pcs)','Warehouse','PO Delivery Date','Your Dispatch Date','Dispatch Deadline','Dispatched On','LR Number','GRN Date','Delivery Status','GRN Status','Delay Reason']];
   sorted.forEach(function(p){
     var wh=state.warehouses.find(function(w){return w.code===p.site;});
     var lr=state.lrRecords.find(function(r){return r.poId===p.id;});

@@ -426,7 +426,7 @@ function renderMyPOs(){
           <span style="color:var(--green);font-weight:600">${fd(dispatchDeadline(p))}</span>
         </div>
         <div class="po-meta-item">
-          <span class="po-meta-lbl">Planned Dispatch Date</span>
+          <span class="po-meta-lbl">Your Dispatch Date</span>
           <span style="color:${dl?'var(--orange)':'var(--accent2)'}">${fd(p.apptDate)||'Not set'}</span>
         </div>
         
@@ -440,12 +440,8 @@ function renderMyPOs(){
         <div class="edit-title">📝 Update your delivery details</div>
         <div class="edit-row">
           <div class="fg">
-            <label>Planned Dispatch Date</label>
+            <label>Your Dispatch Date</label>
             <input type="date" id="appt-${p.id}" value="${tid(p.apptDate)}" onchange="checkDelay('${p.id}')">
-          </div>
-          <div class="fg">
-            <label>Extension Date (if pushed further)</label>
-            <input type="date" id="ext-${p.id}" value="${tid(p.extDate)}" onchange="checkDelay('${p.id}')">
           </div>
           <div style="display:flex;align-items:flex-end;padding-bottom:1px">
             <button class="btn btn-s" style="font-size:10px;padding:6px 10px;white-space:nowrap" onclick="aiAutoFillDate('${p.id}','${p.article||''}',${p.qty},'${p.deliveryDate}')">🤖 AI Suggest Date</button>
@@ -501,7 +497,7 @@ function renderMyPOs(){
 
 function checkDelay(poId){
   const apptEl=document.getElementById('appt-'+poId);
-  const extEl=document.getElementById('ext-'+poId);
+  const extEl=null;
   const warnEl=document.getElementById('delayWarn-'+poId);
   const reqEl=document.getElementById('delayReq-'+poId);
   if(!apptEl||!warnEl)return;
@@ -522,14 +518,14 @@ function checkDelay(poId){
 
 async function savePOUpdate(poId){
   const apptEl=document.getElementById('appt-'+poId);
-  const extEl=document.getElementById('ext-'+poId);
+  const extEl=null;
   const reasonEl=document.getElementById('reason-'+poId);
   const noteEl=document.getElementById('note-'+poId);
   const confirmEl=document.getElementById('saveConfirm-'+poId);
 
   const apptDate=apptEl?.value||'';
-  const extDate=extEl?.value||'';
-  const eff=extDate||apptDate;
+  const extDate='';
+  const eff=apptDate;
   const po=getMyPOs().find(p=>p.id===poId);
   if(!po)return;
 
