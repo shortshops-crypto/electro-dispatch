@@ -418,7 +418,7 @@ function renderMyPOs(){
         </div>
         ${wh?.address?`<div class="po-meta-item"><span class="po-meta-lbl">WH Address</span><span style="font-size:10px">${wh.address}</span></div>`:''}
         <div class="po-meta-item">
-          <span class="po-meta-lbl">PO Expected Date</span>
+          <span class="po-meta-lbl">PO Delivery Date</span>
           <span style="color:var(--red)">${fd(p.deliveryDate)}</span>
         </div>
         <div class="po-meta-item">
@@ -426,10 +426,10 @@ function renderMyPOs(){
           <span style="color:var(--green);font-weight:600">${fd(dispatchDeadline(p))}</span>
         </div>
         <div class="po-meta-item">
-          <span class="po-meta-lbl">Your Appt. Date</span>
+          <span class="po-meta-lbl">Planned Dispatch Date</span>
           <span style="color:${dl?'var(--orange)':'var(--accent2)'}">${fd(p.apptDate)||'Not set'}</span>
         </div>
-        ${p.extDate?`<div class="po-meta-item"><span class="po-meta-lbl">Extension Date</span><span style="color:var(--orange)">${fd(p.extDate)}</span></div>`:''}
+        
       </div>
 
       ${p.delayReason?`<div style="background:rgba(249,115,22,.08);border:1px solid rgba(249,115,22,.2);border-radius:5px;padding:7px 10px;margin-bottom:10px;font-size:11px"><span style="color:var(--orange);font-weight:600">Delay reason: </span>${p.delayReason}</div>`:''}
@@ -440,11 +440,11 @@ function renderMyPOs(){
         <div class="edit-title">📝 Update your delivery details</div>
         <div class="edit-row">
           <div class="fg">
-            <label>Appointment / Delivery Date</label>
+            <label>Planned Dispatch Date</label>
             <input type="date" id="appt-${p.id}" value="${tid(p.apptDate)}" onchange="checkDelay('${p.id}')">
           </div>
           <div class="fg">
-            <label>Extension Date (if pushed)</label>
+            <label>Extension Date (if pushed further)</label>
             <input type="date" id="ext-${p.id}" value="${tid(p.extDate)}" onchange="checkDelay('${p.id}')">
           </div>
           <div style="display:flex;align-items:flex-end;padding-bottom:1px">
